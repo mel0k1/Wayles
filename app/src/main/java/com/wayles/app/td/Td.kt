@@ -1,0 +1,201 @@
+package com.wayles.app.td
+
+import androidx.compose.runtime.getValue
+import androidx.compose.runtime.mutableStateListOf
+import androidx.compose.runtime.mutableStateOf
+import androidx.compose.runtime.setValue
+import org.drinkless.tdlib.Client
+import org.drinkless.tdlib.TdApi
+import java.text.SimpleDateFormat
+import java.util.Date
+import java.util.Locale
+import java.util.concurrent.ConcurrentHashMap
+import java.util.concurrent.atomic.AtomicLong
+
+enum class Auth { Phone, Code, Password, Done }
+
+class Chat {
+    var id: Long = 0
+    var title: String = ""
+    var unread: Int = 0
+    var lastText: String = ""
+    var lastDate: Int = 0
+}
+
+class Msg {
+    var id: Long = 0
+    var out: Boolean = false
+    var text: String = ""
+    var date: Int = 0
+}
+
+object Td {
+
+    init {
+        try {
+            Client.execute(TdApi.SetLogVerbosityLevel(2))
+        } catch (_: Throwable) {
+        }
+    }
+
+    private val client = Client.create({ onUpdate(it) }, null, null)
+    private val nextId = AtomicLong(1)
+    private val pending = ConcurrentHashMap<Long, (TdApi.Object) -> Unit>()
+    private val fmt = SimpleDateFormat("HH:mm", Locale.getDefault())
+
+    var auth by mutableStateOf(Auth.Phone)
+    var error by mutableStateOf("")
+    var openChatId by mutableStateOf<Long?>(null)
+    var openTitle by mutableStateOf("")
+    val chats = mutableStateListOf<Chat>()
+    val messages = mutableStateListOf<Msg>()
+
+    private fun onUpdate(o: TdApi.Object) {
+        when (o) {
+            is TdApi.UpdateAuthorizationState -> onAuthState(o.authorizationState)
+            is TdApi.UpdateNewMessage -> onNewMessage(o.message)
+            else -> {}
+        }
+    }
+
+    private fun onAuthState(s: TdApi.AuthorizationState) {
+        when (s) {
+            is TdApi.AuthorizationStateWaitPhoneNumber -> auth = Auth.Phone
+            is TdApi.AuthorizationStateWaitCode -> auth = Auth.Code
+            is TdApi.AuthorizationStateWaitPassword -> auth = Auth.Password
+            is TdApi.AuthorizationStateReady -> {
+                auth = Auth.Done
+                loadChats()
+            }
+            else -> {}
+        }
+    }
+
+    private fun onNewMessage(m: TdApi.Message) {
+        if (m.chatId == openChatId && messages.none { it.id == m.id }) {
+            messages.add(toMsg(m))
+        }
+        request(TdApi.GetChat(m.chatId)) { r ->
+            if (r is TdApi.Chat) upsert(r)
+        }
+    }
+
+    private fun request(f: TdApi.Function<*>, cb: (TdApi.Object) -> Unit) {
+        val key = nextId.getAndIncrement()
+        pending[key] = cb
+        client.send(f) { r -> pending.remove(key)?.invoke(r) }
+    }
+
+    fun time(unix: Int): String = if (unix > 0) fmt.format(Date(unix * 1000L)) else ""
+
+    fun phone(v: String) {
+        error = ""
+        request(TdApi.SetAuthenticationPhoneNumber(v, null)) { r ->
+            if (r is TdApi.Error) error = r.message
+        }
+    }
+
+    fun code(v: String) {
+        error = ""
+        request(TdApi.CheckAuthenticationCode(v)) { r ->
+            if (r is TdApi.Error) error = r.message
+        }
+    }
+
+    fun password(v: String) {
+        error = ""
+        request(TdApi.CheckAuthenticationPassword(v)) { r ->
+            if (r is TdApi.Error) error = r.message
+        }
+    }
+
+    fun loadChats() {
+        request(TdApi.GetChats(null, 100)) { r ->
+            if (r is TdApi.Chats) {
+                r.chatIds.forEach { id ->
+                    request(TdApi.GetChat(id)) { c ->
+                        if (c is TdApi.Chat) upsert(c)
+                    }
+                }
+            }
+        }
+    }
+
+    private fun upsert(c: TdApi.Chat) {
+        val item = chats.firstOrNull { it.id == c.id } ?: Chat().also { chats.add(it) }
+        item.id = c.id
+        item.title = c.title
+        item.unread = c.unreadCount
+        item.lastDate = c.lastMessage?.date ?: 0
+        item.lastText = content(c.lastMessage?.content)
+        chats.sortByDescending { it.lastDate }
+    }
+
+    private fun content(c: TdApi.MessageContent?): String = when (c) {
+        is TdApi.MessageText -> c.text.text
+        is TdApi.MessagePhoto -> "Photo"
+        is TdApi.MessageVideo -> "Video"
+        is TdApi.MessageSticker -> "Sticker"
+        is TdApi.MessageVoiceNote -> "Voice"
+        is TdApi.MessageDocument -> "Document"
+        is TdApi.MessageAudio -> "Audio"
+        is TdApi.MessageAnimation -> "GIF"
+        null -> ""
+        else -> "Unsupported"
+    }
+
+    private fun toMsg(m: TdApi.Message): Msg {
+        val msg = Msg()
+        msg.id = m.id
+        msg.out = m.isOutgoing
+        msg.text = content(m.content)
+        msg.date = m.date
+        return msg
+    }
+
+    fun openChat(c: Chat) {
+        openChatId = c.id
+        openTitle = c.title
+        messages.clear()
+        request(TdApi.OpenChat(c.id)) { }
+        request(TdApi.GetChatHistory(c.id, 0, 0, 50, false)) { r ->
+            if (r is TdApi.Messages) {
+                r.messages.filterNotNull().reversed().forEach { m ->
+                    if (messages.none { it.id == m.id }) {
+                        messages.add(toMsg(m))
+                    }
+                }
+            }
+        }
+    }
+
+    fun closeChat() {
+        val id = openChatId
+        if (id != null) {
+            request(TdApi.CloseChat(id)) { }
+        }
+        openChatId = null
+        openTitle = ""
+        messages.clear()
+    }
+
+    fun sendText(v: String) {
+        val id = openChatId ?: return
+        val text = v.trim()
+        if (text.isEmpty()) {
+            return
+        }
+        request(
+            TdApi.SendMessage(
+                id,
+                null,
+                null,
+                null,
+                null,
+                TdApi.InputMessageText(TdApi.FormattedText(text, arrayOf()), null, false)
+            )
+        ) { r ->
+            if (r is TdApi.Error) error = r.message
+        }
+    }
+}
