@@ -3,9 +3,7 @@ package com.wayles.app.ui
 import androidx.compose.foundation.isSystemInDarkTheme
 import androidx.compose.foundation.shape.RoundedCornerShape
 import androidx.compose.material3.ColorScheme
-import androidx.compose.material3.ExperimentalMaterial3ExpressiveApi
-import androidx.compose.material3.MaterialExpressiveTheme
-import androidx.compose.material3.MotionScheme
+import androidx.compose.material3.MaterialTheme
 import androidx.compose.material3.Shapes
 import androidx.compose.runtime.Composable
 import androidx.compose.ui.graphics.Color
@@ -97,13 +95,11 @@ private val WaylesShapes = Shapes(
     extraLarge = RoundedCornerShape(32.dp)
 )
 
-@OptIn(ExperimentalMaterial3ExpressiveApi::class)
 @Composable
 fun WaylesTheme(content: @Composable () -> Unit) {
     val dark = isSystemInDarkTheme()
-    MaterialExpressiveTheme(
+    MaterialTheme(
         colorScheme = if (dark) Dark else Light,
-        motionScheme = MotionScheme.expressive(),
         shapes = WaylesShapes,
         content = content
     )
