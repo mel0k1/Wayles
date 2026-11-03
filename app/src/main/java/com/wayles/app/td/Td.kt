@@ -6,10 +6,12 @@ import androidx.compose.runtime.mutableStateOf
 import androidx.compose.runtime.setValue
 import org.drinkless.tdlib.Client
 import org.drinkless.tdlib.TdApi
+import java.io.File
 import java.text.SimpleDateFormat
 import java.util.Date
 import java.util.Locale
 import java.util.concurrent.ConcurrentHashMap
+import java.util.concurrent.Executors
 import java.util.concurrent.atomic.AtomicBoolean
 import java.util.concurrent.atomic.AtomicLong
 
@@ -45,6 +47,8 @@ object Td {
     private val nextId = AtomicLong(1)
     private val pending = ConcurrentHashMap<Long, (TdApi.Object) -> Unit>()
     private val fmt = SimpleDateFormat("HH:mm", Locale.getDefault())
+    var mediaDir: File? = null
+    private val cachePool = Executors.newSingleThreadExecutor()
 
     var auth by mutableStateOf(Auth.Phone)
     var error by mutableStateOf("")
@@ -110,8 +114,30 @@ object Td {
         messages.forEach { m ->
             if (m.fileId == f.id) {
                 m.fileId = 0
-                m.photoPath = f.local.path
+                cacheMedia(f.id, f.local.path, "jpg") { m.photoPath = it }
             }
+        }
+    }
+
+    private fun cacheMedia(id: Int, src: String, ext: String, set: (String) -> Unit) {
+        val dir = mediaDir
+        if (dir == null) {
+            set(src)
+            return
+        }
+        val dst = File(dir, "m_$id.$ext")
+        if (dst.exists()) {
+            set(dst.absolutePath)
+            return
+        }
+        cachePool.execute {
+            val path = try {
+                File(src).copyTo(dst, overwrite = false)
+                dst.absolutePath
+            } catch (_: Throwable) {
+                src
+            }
+            set(path)
         }
     }
 
@@ -238,7 +264,7 @@ object Td {
                 val f = c.photo.sizes.maxByOrNull { it.width * it.height }?.photo
                 if (f != null) {
                     if (f.local.isDownloadingCompleted && f.local.path.isNotEmpty()) {
-                        msg.photoPath = f.local.path
+                        cacheMedia(f.id, f.local.path, "jpg") { msg.photoPath = it }
                     } else {
                         msg.fileId = f.id
                         request(TdApi.DownloadFile(f.id, 32, 0, 0, false)) { }
