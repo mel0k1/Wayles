@@ -10,7 +10,7 @@ import com.wayles.app.td.Td
 
 @Composable
 fun App() {
-    WaylesTheme {
+    WaylesTheme(mode = ThemeStore.mode) {
         Surface(
             modifier = Modifier.fillMaxSize(),
             color = MaterialTheme.colorScheme.background

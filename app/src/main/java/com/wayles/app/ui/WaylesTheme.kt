@@ -96,8 +96,12 @@ private val WaylesShapes = Shapes(
 )
 
 @Composable
-fun WaylesTheme(content: @Composable () -> Unit) {
-    val dark = isSystemInDarkTheme()
+fun WaylesTheme(mode: ThemeMode = ThemeMode.System, content: @Composable () -> Unit) {
+    val dark = when (mode) {
+        ThemeMode.System -> isSystemInDarkTheme()
+        ThemeMode.Light -> false
+        ThemeMode.Dark -> true
+    }
     MaterialTheme(
         colorScheme = if (dark) Dark else Light,
         shapes = WaylesShapes,
