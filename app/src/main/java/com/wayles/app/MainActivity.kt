@@ -11,6 +11,7 @@ class MainActivity : ComponentActivity() {
     override fun onCreate(savedInstanceState: Bundle?) {
         super.onCreate(savedInstanceState)
         Td.mediaDir = File(filesDir, "media").apply { mkdirs() }
+        Td.start(File(filesDir, "tdlib").apply { mkdirs() }, filesDir)
         setContent {
             App()
         }

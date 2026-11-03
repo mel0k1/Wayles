@@ -1,9 +1,11 @@
 package com.wayles.app.td
 
+import android.os.Build
 import androidx.compose.runtime.getValue
 import androidx.compose.runtime.mutableStateListOf
 import androidx.compose.runtime.mutableStateOf
 import androidx.compose.runtime.setValue
+import com.wayles.app.BuildConfig
 import org.drinkless.tdlib.Client
 import org.drinkless.tdlib.TdApi
 import java.io.File
@@ -15,7 +17,7 @@ import java.util.concurrent.Executors
 import java.util.concurrent.atomic.AtomicBoolean
 import java.util.concurrent.atomic.AtomicLong
 
-enum class Auth { Phone, Code, Password, Done }
+enum class Auth { Init, Phone, Code, Password, Done }
 
 class Chat {
     var id: Long = 0
@@ -48,14 +50,17 @@ object Td {
         }
     }
 
-    private val client = Client.create({ onUpdate(it) }, null, null)
+    @Volatile
+    private var client: Client? = null
+    private var dbDir: File? = null
+    private var filesRoot: File? = null
     private val nextId = AtomicLong(1)
     private val pending = ConcurrentHashMap<Long, (TdApi.Object) -> Unit>()
     private val fmt = SimpleDateFormat("HH:mm", Locale.getDefault())
     var mediaDir: File? = null
     private val cachePool = Executors.newSingleThreadExecutor()
 
-    var auth by mutableStateOf(Auth.Phone)
+    var auth by mutableStateOf(Auth.Init)
     var error by mutableStateOf("")
     var openChatId by mutableStateOf<Long?>(null)
     var openTitle by mutableStateOf("")
@@ -214,6 +219,7 @@ object Td {
 
     private fun onAuthState(s: TdApi.AuthorizationState) {
         when (s) {
+            is TdApi.AuthorizationStateWaitTdlibParameters -> setTdlibParameters()
             is TdApi.AuthorizationStateWaitPhoneNumber -> auth = Auth.Phone
             is TdApi.AuthorizationStateWaitCode -> auth = Auth.Code
             is TdApi.AuthorizationStateWaitPassword -> auth = Auth.Password
@@ -221,7 +227,35 @@ object Td {
                 auth = Auth.Done
                 loadChats()
             }
+            is TdApi.AuthorizationStateClosed -> spawn()
             else -> {}
+        }
+    }
+
+    private fun setTdlibParameters() {
+        val db = dbDir ?: return
+        val files = filesRoot ?: return
+        request(
+            TdApi.SetTdlibParameters(
+                false,
+                db.absolutePath,
+                files.absolutePath,
+                null,
+                true,
+                true,
+                true,
+                false,
+                BuildConfig.TD_API_ID,
+                BuildConfig.TD_API_HASH,
+                Locale.getDefault().language.ifEmpty { "en" },
+                Build.MODEL ?: "Android",
+                "Android ${Build.VERSION.RELEASE}",
+                BuildConfig.VERSION_NAME
+            )
+        ) { r ->
+            if (r is TdApi.Error) {
+                error = r.message
+            }
         }
     }
 
@@ -234,10 +268,23 @@ object Td {
         }
     }
 
+    fun start(db: File, files: File) {
+        dbDir = db
+        filesRoot = files
+        if (client == null) {
+            spawn()
+        }
+    }
+
+    private fun spawn() {
+        client = Client.create({ onUpdate(it) }, null, null)
+    }
+
     private fun request(f: TdApi.Function<*>, cb: (TdApi.Object) -> Unit) {
+        val c = client ?: return
         val key = nextId.getAndIncrement()
         pending[key] = cb
-        client.send(f) { r -> pending.remove(key)?.invoke(r) }
+        c.send(f) { r -> pending.remove(key)?.invoke(r) }
     }
 
     fun time(unix: Int): String = if (unix > 0) fmt.format(Date(unix * 1000L)) else ""

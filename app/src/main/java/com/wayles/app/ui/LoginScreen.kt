@@ -8,8 +8,10 @@ import androidx.compose.foundation.layout.fillMaxSize
 import androidx.compose.foundation.layout.fillMaxWidth
 import androidx.compose.foundation.layout.height
 import androidx.compose.foundation.layout.padding
+import androidx.compose.foundation.layout.size
 import androidx.compose.foundation.shape.RoundedCornerShape
 import androidx.compose.foundation.text.KeyboardOptions
+import androidx.compose.material3.CircularProgressIndicator
 import androidx.compose.material3.MaterialTheme
 import androidx.compose.material3.OutlinedTextField
 import androidx.compose.material3.Text
@@ -54,40 +56,50 @@ fun LoginScreen() {
             color = MaterialTheme.colorScheme.onSurfaceVariant,
             textAlign = TextAlign.Center
         )
+        if (step == Auth.Init) {
+            Spacer(Modifier.height(24.dp))
+            CircularProgressIndicator(
+                modifier = Modifier.size(28.dp),
+                strokeWidth = 2.5.dp,
+                color = MaterialTheme.colorScheme.primary
+            )
+        }
         Spacer(Modifier.height(32.dp))
-        OutlinedTextField(
-            value = value,
-            onValueChange = {
-                value = it
-                Td.error = ""
-            },
-            label = { Text(label(step)) },
-            singleLine = true,
-            shape = RoundedCornerShape(28.dp),
-            keyboardOptions = KeyboardOptions(
-                keyboardType = if (step == Auth.Phone) KeyboardType.Phone else KeyboardType.Text
-            ),
-            visualTransformation = if (step == Auth.Password) {
-                PasswordVisualTransformation()
-            } else {
-                VisualTransformation.None
-            },
-            modifier = Modifier.fillMaxWidth()
-        )
-        Spacer(Modifier.height(16.dp))
-        WaylesButton(
-            text = "Продолжить",
-            enabled = value.isNotBlank(),
-            onClick = {
-                when (step) {
-                    Auth.Phone -> Td.phone(value.trim())
-                    Auth.Code -> Td.code(value.trim())
-                    Auth.Password -> Td.password(value)
-                    else -> {}
+        if (step != Auth.Init) {
+            OutlinedTextField(
+                value = value,
+                onValueChange = {
+                    value = it
+                    Td.error = ""
+                },
+                label = { Text(label(step)) },
+                singleLine = true,
+                shape = RoundedCornerShape(28.dp),
+                keyboardOptions = KeyboardOptions(
+                    keyboardType = if (step == Auth.Phone) KeyboardType.Phone else KeyboardType.Text
+                ),
+                visualTransformation = if (step == Auth.Password) {
+                    PasswordVisualTransformation()
+                } else {
+                    VisualTransformation.None
+                },
+                modifier = Modifier.fillMaxWidth()
+            )
+            Spacer(Modifier.height(16.dp))
+            WaylesButton(
+                text = "Продолжить",
+                enabled = value.isNotBlank(),
+                onClick = {
+                    when (step) {
+                        Auth.Phone -> Td.phone(value.trim())
+                        Auth.Code -> Td.code(value.trim())
+                        Auth.Password -> Td.password(value)
+                        else -> {}
+                    }
+                    value = ""
                 }
-                value = ""
-            }
-        )
+            )
+        }
         if (Td.error.isNotEmpty()) {
             Spacer(Modifier.height(12.dp))
             Text(
@@ -100,6 +112,7 @@ fun LoginScreen() {
 }
 
 private fun hint(s: Auth): String = when (s) {
+    Auth.Init -> "Подключение к Telegram"
     Auth.Phone -> "Войдите через номер Telegram"
     Auth.Code -> "Введите код из Telegram"
     Auth.Password -> "Введите облачный пароль"

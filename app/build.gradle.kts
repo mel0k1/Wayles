@@ -1,3 +1,5 @@
+import java.util.Properties
+
 plugins {
     id("com.android.application")
     id("org.jetbrains.kotlin.android")
@@ -14,6 +16,21 @@ android {
         targetSdk = 36
         versionCode = 2
         versionName = "0.2"
+
+        val lp = Properties().apply {
+            val f = rootProject.file("local.properties")
+            if (f.exists()) {
+                f.inputStream().use { load(it) }
+            }
+        }
+        buildConfigField(
+            "int",
+            "TD_API_ID",
+            System.getenv("TD_API_ID") ?: lp.getProperty("wayles.apiId") ?: "6"
+        )
+        val hash = System.getenv("TD_API_HASH") ?: lp.getProperty("wayles.apiHash")
+            ?: "eb06d4abfb49dc3eeb1aeb98ae0f581e"
+        buildConfigField("String", "TD_API_HASH", "\"$hash\"")
     }
 
     packaging {
@@ -29,6 +46,7 @@ android {
 
     buildFeatures {
         compose = true
+        buildConfig = true
     }
 }
 
