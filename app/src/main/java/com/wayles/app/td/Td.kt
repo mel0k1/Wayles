@@ -55,6 +55,16 @@ class Msg {
     var voiceAmps by mutableStateOf(IntArray(0))
 }
 
+class MediaItem {
+    var msgId: Long = 0
+    var isVideo: Boolean = false
+    var duration: Int = 0
+    var thumbPath by mutableStateOf<String?>(null)
+    var fullPath by mutableStateOf<String?>(null)
+    var thumbFileId by mutableStateOf(0)
+    var fullFileId by mutableStateOf(0)
+}
+
 object Td {
 
     @Volatile
@@ -97,6 +107,8 @@ object Td {
     val chats = mutableStateListOf<Chat>()
     val messages = mutableStateListOf<Msg>()
     val searchResults = mutableStateListOf<Chat>()
+    val mediaItems = mutableStateListOf<MediaItem>()
+    var mediaChatId by mutableStateOf<Long?>(null)
 
     private fun sortChats() {
         chats.sortWith(compareByDescending<Chat> { it.pinned }.thenByDescending { it.lastDate })
@@ -172,6 +184,16 @@ object Td {
             if (m.voiceFileId == f.id) {
                 m.voiceFileId = 0
                 cacheMedia(f.id, f.local.path, "oga") { m.voicePath = it }
+            }
+        }
+        mediaItems.forEach { mi ->
+            if (mi.thumbFileId == f.id) {
+                mi.thumbFileId = 0
+                cacheMedia(f.id, f.local.path, "jpg") { mi.thumbPath = it }
+            }
+            if (mi.fullFileId == f.id) {
+                mi.fullFileId = 0
+                cacheMedia(f.id, f.local.path, if (mi.isVideo) "mp4" else "jpg") { mi.fullPath = it }
             }
         }
     }
@@ -651,6 +673,83 @@ object Td {
         openChatId = null
         openTitle = ""
         messages.clear()
+    }
+
+    fun openMedia(chatId: Long) {
+        mediaChatId = chatId
+        mediaItems.clear()
+        loadMediaPage(chatId, 0, 0)
+    }
+
+    fun closeMedia() {
+        mediaChatId = null
+        mediaItems.clear()
+    }
+
+    fun downloadMedia(item: MediaItem) {
+        if (item.fullFileId == 0 || item.fullPath != null) {
+            return
+        }
+        request(TdApi.DownloadFile(item.fullFileId, 32, 0, 0, false)) { }
+    }
+
+    private fun loadMediaPage(chatId: Long, fromId: Long, depth: Int) {
+        if (depth > 5) {
+            return
+        }
+        request(TdApi.GetChatHistory(chatId, fromId, 0, 100, false)) { r ->
+            if (mediaChatId != chatId) {
+                return@request
+            }
+            if (r is TdApi.Messages) {
+                val list = r.messages.filterNotNull()
+                list.filter { it.content is TdApi.MessagePhoto || it.content is TdApi.MessageVideo }
+                    .forEach { addMedia(it) }
+                if (list.size >= 100) {
+                    loadMediaPage(chatId, list.last().id, depth + 1)
+                }
+            }
+        }
+    }
+
+    private fun addMedia(m: TdApi.Message) {
+        if (mediaItems.any { it.msgId == m.id }) {
+            return
+        }
+        val item = MediaItem()
+        item.msgId = m.id
+        var thumb: TdApi.File? = null
+        var full: TdApi.File? = null
+        when (val c = m.content) {
+            is TdApi.MessagePhoto -> {
+                val sizes = c.photo.sizes.filter { it.width > 0 }
+                thumb = sizes.minByOrNull { it.width * it.height }?.photo
+                full = sizes.maxByOrNull { it.width * it.height }?.photo
+            }
+            is TdApi.MessageVideo -> {
+                item.isVideo = true
+                item.duration = c.video.duration
+                thumb = c.video.thumbnail?.file
+                full = c.video.video
+            }
+            else -> {}
+        }
+        val f = full ?: return
+        val t = thumb
+        if (t != null) {
+            if (t.local.isDownloadingCompleted && t.local.path.isNotEmpty()) {
+                cacheMedia(t.id, t.local.path, "jpg") { item.thumbPath = it }
+            } else {
+                item.thumbFileId = t.id
+                request(TdApi.DownloadFile(t.id, 1, 0, 0, false)) { }
+            }
+        }
+        if (f.local.isDownloadingCompleted && f.local.path.isNotEmpty()) {
+            cacheMedia(f.id, f.local.path, if (item.isVideo) "mp4" else "jpg") { item.fullPath = it }
+        } else {
+            item.fullFileId = f.id
+        }
+        mediaItems.add(item)
     }
 
     fun sendText(v: String, replyId: Long) {

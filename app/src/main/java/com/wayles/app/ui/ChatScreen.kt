@@ -51,6 +51,7 @@ import androidx.compose.material.icons.rounded.Add
 import androidx.compose.material.icons.rounded.Close
 import androidx.compose.material.icons.rounded.Mic
 import androidx.compose.material.icons.rounded.Pause
+import androidx.compose.material.icons.rounded.PhotoLibrary
 import androidx.compose.material.icons.rounded.PlayArrow
 import androidx.compose.material3.CircularProgressIndicator
 import androidx.compose.material3.ExperimentalMaterial3Api
@@ -182,6 +183,16 @@ fun ChatScreen() {
                 navigationIcon = {
                     IconButton(onClick = { Td.closeChat() }) {
                         Icon(Icons.AutoMirrored.Rounded.ArrowBack, contentDescription = null)
+                    }
+                },
+                actions = {
+                    IconButton(onClick = {
+                        val id = Td.openChatId
+                        if (id != null) {
+                            Td.openMedia(id)
+                        }
+                    }) {
+                        Icon(Icons.Rounded.PhotoLibrary, contentDescription = null)
                     }
                 },
                 colors = TopAppBarDefaults.topAppBarColors(

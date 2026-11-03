@@ -24,6 +24,7 @@ fun App() {
             } else {
                 when {
                     Td.auth != Auth.Done -> LoginScreen()
+                    Td.mediaChatId != null -> MediaScreen()
                     Td.openChatId != null -> ChatScreen()
                     else -> MainScreen()
                 }
