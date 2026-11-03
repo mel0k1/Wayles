@@ -7,10 +7,12 @@ import androidx.activity.compose.rememberLauncherForActivityResult
 import androidx.activity.result.PickVisualMediaRequest
 import androidx.activity.result.contract.ActivityResultContracts
 import androidx.compose.animation.animateContentSize
+import androidx.compose.animation.core.animate
 import androidx.compose.animation.core.spring
 import androidx.compose.foundation.Image
 import androidx.compose.foundation.background
 import androidx.compose.foundation.clickable
+import androidx.compose.foundation.gestures.detectHorizontalDragGestures
 import androidx.compose.foundation.interaction.MutableInteractionSource
 import androidx.compose.foundation.layout.Arrangement
 import androidx.compose.foundation.layout.Box
@@ -34,6 +36,7 @@ import androidx.compose.material.icons.Icons
 import androidx.compose.material.icons.automirrored.rounded.ArrowBack
 import androidx.compose.material.icons.automirrored.rounded.Send
 import androidx.compose.material.icons.rounded.Add
+import androidx.compose.material.icons.rounded.Close
 import androidx.compose.material.icons.rounded.PlayArrow
 import androidx.compose.material3.CircularProgressIndicator
 import androidx.compose.material3.ExperimentalMaterial3Api
@@ -55,6 +58,7 @@ import androidx.compose.runtime.getValue
 import androidx.compose.runtime.mutableStateOf
 import androidx.compose.runtime.produceState
 import androidx.compose.runtime.remember
+import androidx.compose.runtime.rememberCoroutineScope
 import androidx.compose.runtime.setValue
 import androidx.compose.runtime.snapshotFlow
 import androidx.compose.ui.Alignment
@@ -63,6 +67,7 @@ import androidx.compose.ui.draw.clip
 import androidx.compose.ui.graphics.Color
 import androidx.compose.ui.graphics.ImageBitmap
 import androidx.compose.ui.graphics.asImageBitmap
+import androidx.compose.ui.graphics.graphicsLayer
 import androidx.compose.ui.layout.ContentScale
 import androidx.compose.ui.platform.LocalContext
 import androidx.compose.ui.unit.dp
@@ -72,11 +77,13 @@ import com.wayles.app.td.Msg
 import com.wayles.app.td.Td
 import java.io.File
 import kotlinx.coroutines.Dispatchers
+import kotlinx.coroutines.launch
 import kotlinx.coroutines.withContext
 
 @OptIn(ExperimentalMaterial3Api::class)
 @Composable
 fun ChatScreen() {
+    BackHandler(enabled = Td.replyTo != null) { Td.replyTo = null }
     BackHandler { Td.closeChat() }
     var input by remember { mutableStateOf("") }
     var pendingPhoto by remember { mutableStateOf<String?>(null) }
@@ -121,7 +128,8 @@ fun ChatScreen() {
                 dst.outputStream().use { out -> src.copyTo(out) }
             }
             if (video) {
-                Td.sendVideo(dst.absolutePath)
+                Td.sendVideo(dst.absolutePath, Td.replyTo?.id ?: 0L)
+                Td.replyTo = null
             } else {
                 pendingPhoto = dst.absolutePath
             }
@@ -178,6 +186,31 @@ fun ChatScreen() {
                     }
                 }
             }
+            Td.replyTo?.let { r ->
+                Row(
+                    modifier = Modifier.fillMaxWidth().padding(horizontal = 12.dp, vertical = 4.dp)
+                        .clip(RoundedCornerShape(14.dp))
+                        .background(MaterialTheme.colorScheme.surfaceContainerHigh)
+                        .padding(horizontal = 12.dp, vertical = 6.dp),
+                    verticalAlignment = Alignment.CenterVertically
+                ) {
+                    Column(Modifier.weight(1f)) {
+                        Text(
+                            "Ответ",
+                            style = MaterialTheme.typography.labelSmall,
+                            color = MaterialTheme.colorScheme.primary
+                        )
+                        Text(
+                            replyPreview(r),
+                            style = MaterialTheme.typography.bodySmall,
+                            maxLines = 1
+                        )
+                    }
+                    IconButton(onClick = { Td.replyTo = null }) {
+                        Icon(Icons.Rounded.Close, contentDescription = null)
+                    }
+                }
+            }
             Row(
                 modifier = Modifier.fillMaxWidth().padding(12.dp),
                 verticalAlignment = Alignment.Bottom
@@ -206,8 +239,9 @@ fun ChatScreen() {
                 val radius = rememberPressRadius(source, 28.dp, 14.dp)
                 FilledIconButton(
                     onClick = {
-                        Td.sendText(input)
+                        Td.sendText(input, Td.replyTo?.id ?: 0L)
                         input = ""
+                        Td.replyTo = null
                     },
                     interactionSource = source,
                     shape = RoundedCornerShape(radius),
@@ -246,7 +280,8 @@ fun ChatScreen() {
                         Spacer(Modifier.width(8.dp))
                         FilledTonalButton(onClick = {
                             pendingPhoto = null
-                            Td.sendPhoto(path)
+                            Td.sendPhoto(path, Td.replyTo?.id ?: 0L)
+                            Td.replyTo = null
                         }) {
                             Text("Отправить")
                         }
@@ -259,8 +294,32 @@ fun ChatScreen() {
 
 @Composable
 private fun Bubble(m: Msg, modifier: Modifier = Modifier) {
+    val scope = rememberCoroutineScope()
+    var dragX by remember { mutableStateOf(0f) }
     Row(
-        modifier = modifier.fillMaxWidth().padding(vertical = 2.dp),
+        modifier = modifier
+            .fillMaxWidth()
+            .padding(vertical = 2.dp)
+            .graphicsLayer { translationX = dragX }
+            .pointerInput(m.id) {
+                detectHorizontalDragGestures(
+                    onHorizontalDrag = { change, amount ->
+                        change.consume()
+                        dragX = (dragX + amount).coerceIn(0f, 160f)
+                    },
+                    onDragEnd = {
+                        val fire = dragX > 110f
+                        scope.launch {
+                            animate(dragX, 0f, animationSpec = spring(stiffness = 500f)) { v, _ ->
+                                dragX = v
+                            }
+                        }
+                        if (fire) {
+                            Td.replyTo = m
+                        }
+                    }
+                )
+            },
         horizontalArrangement = if (m.out) Arrangement.End else Arrangement.Start
     ) {
         Box(
@@ -375,6 +434,13 @@ private fun formatDuration(s: Int): String {
     val min = s / 60
     val sec = s % 60
     return "%d:%02d".format(min, sec)
+}
+
+private fun replyPreview(m: Msg): String = when {
+    m.text.isNotEmpty() -> m.text
+    m.photoPath != null || m.fileId != 0 -> "Фото"
+    m.duration > 0 -> "Видео"
+    else -> "Сообщение"
 }
 
 @Composable

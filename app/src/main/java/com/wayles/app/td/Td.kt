@@ -59,6 +59,7 @@ object Td {
     var error by mutableStateOf("")
     var openChatId by mutableStateOf<Long?>(null)
     var openTitle by mutableStateOf("")
+    var replyTo by mutableStateOf<Msg?>(null)
     private var historyEnd by mutableStateOf(false)
     private val loadingHistory = AtomicBoolean(false)
     val chats = mutableStateListOf<Chat>()
@@ -154,13 +155,13 @@ object Td {
         }
     }
 
-    fun sendPhoto(path: String) {
+    fun sendPhoto(path: String, replyId: Long) {
         val id = openChatId ?: return
         request(
             TdApi.SendMessage(
                 id,
                 null,
-                null,
+                if (replyId != 0L) TdApi.InputMessageReplyToMessage(replyId, null, 0, null) else null,
                 null,
                 null,
                 TdApi.InputMessagePhoto(
@@ -181,13 +182,13 @@ object Td {
         }
     }
 
-    fun sendVideo(path: String) {
+    fun sendVideo(path: String, replyId: Long) {
         val id = openChatId ?: return
         request(
             TdApi.SendMessage(
                 id,
                 null,
-                null,
+                if (replyId != 0L) TdApi.InputMessageReplyToMessage(replyId, null, 0, null) else null,
                 null,
                 null,
                 TdApi.InputMessageVideo(
@@ -392,7 +393,7 @@ object Td {
         messages.clear()
     }
 
-    fun sendText(v: String) {
+    fun sendText(v: String, replyId: Long) {
         val id = openChatId ?: return
         val text = v.trim()
         if (text.isEmpty()) {
@@ -402,7 +403,7 @@ object Td {
             TdApi.SendMessage(
                 id,
                 null,
-                null,
+                if (replyId != 0L) TdApi.InputMessageReplyToMessage(replyId, null, 0, null) else null,
                 null,
                 null,
                 TdApi.InputMessageText(TdApi.FormattedText(text, arrayOf()), null, false)
