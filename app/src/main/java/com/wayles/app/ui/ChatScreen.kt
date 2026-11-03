@@ -33,12 +33,15 @@ import androidx.compose.material.icons.automirrored.rounded.Send
 import androidx.compose.material.icons.rounded.Add
 import androidx.compose.material3.ExperimentalMaterial3Api
 import androidx.compose.material3.FilledIconButton
+import androidx.compose.material3.FilledTonalButton
 import androidx.compose.material3.Icon
 import androidx.compose.material3.IconButton
 import androidx.compose.material3.MaterialTheme
 import androidx.compose.material3.OutlinedTextField
 import androidx.compose.material3.Scaffold
+import androidx.compose.material3.Surface
 import androidx.compose.material3.Text
+import androidx.compose.material3.TextButton
 import androidx.compose.material3.TopAppBar
 import androidx.compose.material3.TopAppBarDefaults
 import androidx.compose.runtime.Composable
@@ -57,6 +60,7 @@ import androidx.compose.ui.graphics.asImageBitmap
 import androidx.compose.ui.layout.ContentScale
 import androidx.compose.ui.platform.LocalContext
 import androidx.compose.ui.unit.dp
+import androidx.compose.ui.window.Dialog
 import com.wayles.app.td.Msg
 import com.wayles.app.td.Td
 import java.io.File
@@ -68,6 +72,7 @@ import kotlinx.coroutines.withContext
 fun ChatScreen() {
     BackHandler { Td.closeChat() }
     var input by remember { mutableStateOf("") }
+    var pendingPhoto by remember { mutableStateOf<String?>(null) }
     val listState = rememberLazyListState()
     val lastId = Td.messages.lastOrNull()?.id
     val firstId = Td.messages.firstOrNull()?.id
@@ -107,7 +112,7 @@ fun ChatScreen() {
             ctx.contentResolver.openInputStream(uri)?.use { src ->
                 dst.outputStream().use { out -> src.copyTo(out) }
             }
-            Td.sendPhoto(dst.absolutePath)
+            pendingPhoto = dst.absolutePath
         }
     }
 
@@ -201,6 +206,43 @@ fun ChatScreen() {
             }
         }
     }
+
+    pendingPhoto?.let { path ->
+        Dialog(onDismissRequest = { pendingPhoto = null }) {
+            Surface(
+                shape = RoundedCornerShape(28.dp),
+                color = MaterialTheme.colorScheme.surfaceContainer,
+                modifier = Modifier.widthIn(max = 360.dp)
+            ) {
+                Column(Modifier.padding(16.dp)) {
+                    Box(
+                        modifier = Modifier.fillMaxWidth().height(360.dp)
+                            .clip(RoundedCornerShape(18.dp)),
+                        contentAlignment = Alignment.Center
+                    ) {
+                        PreviewPhoto(path)
+                    }
+                    Spacer(Modifier.height(12.dp))
+                    Row(
+                        modifier = Modifier.fillMaxWidth(),
+                        horizontalArrangement = Arrangement.End,
+                        verticalAlignment = Alignment.CenterVertically
+                    ) {
+                        TextButton(onClick = { pendingPhoto = null }) {
+                            Text("Отмена")
+                        }
+                        Spacer(Modifier.width(8.dp))
+                        FilledTonalButton(onClick = {
+                            pendingPhoto = null
+                            Td.sendPhoto(path)
+                        }) {
+                            Text("Отправить")
+                        }
+                    }
+                }
+            }
+        }
+    }
 }
 
 @Composable
@@ -258,6 +300,22 @@ private fun Photo(path: String) {
             contentDescription = null,
             contentScale = ContentScale.FillWidth,
             modifier = Modifier.fillMaxWidth().clip(RoundedCornerShape(14.dp))
+        )
+    }
+}
+
+@Composable
+private fun PreviewPhoto(path: String) {
+    val bmp by produceState<ImageBitmap?>(null, path) {
+        value = withContext(Dispatchers.IO) { decodePhoto(path) }
+    }
+    val b = bmp
+    if (b != null) {
+        Image(
+            bitmap = b,
+            contentDescription = null,
+            contentScale = ContentScale.Crop,
+            modifier = Modifier.fillMaxSize()
         )
     }
 }
