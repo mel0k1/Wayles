@@ -47,10 +47,17 @@ class Msg {
 
 object Td {
 
+    @Volatile
+    private var loaded = false
+    var initError by mutableStateOf<String?>(null)
+        private set
+
     init {
-        try {
-            Client.execute(TdApi.SetLogVerbosityLevel(2))
-        } catch (_: Throwable) {
+        if (loadNative()) {
+            try {
+                Client.execute(TdApi.SetLogVerbosityLevel(2))
+            } catch (_: Throwable) {
+            }
         }
     }
 
@@ -306,8 +313,38 @@ object Td {
         }
     }
 
+    private fun loadNative(): Boolean {
+        if (loaded) {
+            return true
+        }
+        for (lib in listOf("sslx", "cryptox", "tdjni")) {
+            try {
+                System.loadLibrary(lib)
+            } catch (t: Throwable) {
+                initError = "Не удалось загрузить $lib: ${t.message ?: t.javaClass.simpleName}"
+                return false
+            }
+        }
+        loaded = true
+        return true
+    }
+
     private fun spawn() {
-        client = Client.create({ onUpdate(it) }, null, null)
+        if (!loadNative()) {
+            return
+        }
+        try {
+            client = Client.create({ onUpdate(it) }, null, null)
+        } catch (t: Throwable) {
+            initError = "TDLib: ${t.message ?: t.javaClass.simpleName}"
+        }
+    }
+
+    fun retry() {
+        initError = null
+        if (client == null) {
+            spawn()
+        }
     }
 
     private fun request(f: TdApi.Function<*>, cb: (TdApi.Object) -> Unit) {

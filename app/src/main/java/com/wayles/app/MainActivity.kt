@@ -11,11 +11,12 @@ import java.io.File
 class MainActivity : ComponentActivity() {
     override fun onCreate(savedInstanceState: Bundle?) {
         super.onCreate(savedInstanceState)
-        Td.mediaDir = File(filesDir, "media").apply { mkdirs() }
-        Td.start(File(filesDir, "tdlib").apply { mkdirs() }, filesDir)
+        CrashGuard.install(this)
         ThemeStore.init(this)
+        Td.mediaDir = File(filesDir, "media").apply { mkdirs() }
         setContent {
             App()
         }
+        Td.start(File(filesDir, "tdlib").apply { mkdirs() }, filesDir)
     }
 }

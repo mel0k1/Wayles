@@ -58,11 +58,23 @@ fun LoginScreen() {
         )
         if (step == Auth.Init) {
             Spacer(Modifier.height(24.dp))
-            CircularProgressIndicator(
-                modifier = Modifier.size(28.dp),
-                strokeWidth = 2.5.dp,
-                color = MaterialTheme.colorScheme.primary
-            )
+            val err = Td.initError
+            if (err != null) {
+                Text(
+                    err,
+                    color = MaterialTheme.colorScheme.error,
+                    style = MaterialTheme.typography.bodySmall,
+                    textAlign = TextAlign.Center
+                )
+                Spacer(Modifier.height(12.dp))
+                WaylesButton(text = "Повторить", onClick = { Td.retry() })
+            } else {
+                CircularProgressIndicator(
+                    modifier = Modifier.size(28.dp),
+                    strokeWidth = 2.5.dp,
+                    color = MaterialTheme.colorScheme.primary
+                )
+            }
         }
         Spacer(Modifier.height(32.dp))
         if (step != Auth.Init) {
