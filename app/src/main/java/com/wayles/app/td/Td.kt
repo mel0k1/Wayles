@@ -28,6 +28,8 @@ class Msg {
     var out: Boolean = false
     var text: String = ""
     var date: Int = 0
+    var photoPath by mutableStateOf<String?>(null)
+    var fileId by mutableStateOf(0)
 }
 
 object Td {
@@ -61,6 +63,7 @@ object Td {
             is TdApi.UpdateChatReadInbox -> onReadInbox(o)
             is TdApi.UpdateChatTitle -> onTitle(o)
             is TdApi.UpdateDeleteMessages -> onDeleted(o)
+            is TdApi.UpdateFile -> onFile(o.file)
             else -> {}
         }
     }
@@ -98,6 +101,18 @@ object Td {
         }
         val gone = u.messageIds.toSet()
         messages.removeAll { it.id in gone }
+    }
+
+    private fun onFile(f: TdApi.File) {
+        if (!f.local.isDownloadingCompleted || f.local.path.isEmpty()) {
+            return
+        }
+        messages.forEach { m ->
+            if (m.fileId == f.id) {
+                m.fileId = 0
+                m.photoPath = f.local.path
+            }
+        }
     }
 
     private fun onAuthState(s: TdApi.AuthorizationState) {
@@ -175,23 +190,36 @@ object Td {
 
     private fun content(c: TdApi.MessageContent?): String = when (c) {
         is TdApi.MessageText -> c.text.text
-        is TdApi.MessagePhoto -> "Photo"
-        is TdApi.MessageVideo -> "Video"
-        is TdApi.MessageSticker -> "Sticker"
-        is TdApi.MessageVoiceNote -> "Voice"
-        is TdApi.MessageDocument -> "Document"
-        is TdApi.MessageAudio -> "Audio"
+        is TdApi.MessagePhoto -> "Фото"
+        is TdApi.MessageVideo -> "Видео"
+        is TdApi.MessageSticker -> "Стикер"
+        is TdApi.MessageVoiceNote -> "Голос"
+        is TdApi.MessageDocument -> "Документ"
+        is TdApi.MessageAudio -> "Аудио"
         is TdApi.MessageAnimation -> "GIF"
         null -> ""
-        else -> "Unsupported"
+        else -> "Вложение"
     }
 
     private fun toMsg(m: TdApi.Message): Msg {
         val msg = Msg()
         msg.id = m.id
         msg.out = m.isOutgoing
-        msg.text = content(m.content)
         msg.date = m.date
+        when (val c = m.content) {
+            is TdApi.MessagePhoto -> {
+                val f = c.photo.sizes.maxByOrNull { it.width * it.height }?.photo
+                if (f != null) {
+                    if (f.local.isDownloadingCompleted && f.local.path.isNotEmpty()) {
+                        msg.photoPath = f.local.path
+                    } else {
+                        msg.fileId = f.id
+                        request(TdApi.DownloadFile(f.id, 32, 0, 0, false)) { }
+                    }
+                }
+            }
+            else -> msg.text = content(c)
+        }
         return msg
     }
 

@@ -1,6 +1,8 @@
 package com.wayles.app.ui
 
+import android.graphics.BitmapFactory
 import androidx.activity.compose.BackHandler
+import androidx.compose.foundation.Image
 import androidx.compose.foundation.background
 import androidx.compose.foundation.interaction.MutableInteractionSource
 import androidx.compose.foundation.layout.Arrangement
@@ -28,15 +30,21 @@ import androidx.compose.runtime.Composable
 import androidx.compose.runtime.LaunchedEffect
 import androidx.compose.runtime.getValue
 import androidx.compose.runtime.mutableStateOf
+import androidx.compose.runtime.produceState
 import androidx.compose.runtime.remember
 import androidx.compose.runtime.setValue
 import androidx.compose.runtime.snapshotFlow
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.draw.clip
+import androidx.compose.ui.graphics.ImageBitmap
+import androidx.compose.ui.graphics.asImageBitmap
+import androidx.compose.ui.layout.ContentScale
 import androidx.compose.ui.unit.dp
 import com.wayles.app.td.Msg
 import com.wayles.app.td.Td
+import kotlinx.coroutines.Dispatchers
+import kotlinx.coroutines.withContext
 
 @Composable
 fun ChatScreen() {
@@ -147,15 +155,18 @@ private fun Bubble(m: Msg) {
                 .padding(horizontal = 14.dp, vertical = 10.dp)
         ) {
             Column {
-                Text(
-                    m.text,
-                    style = MaterialTheme.typography.bodyMedium,
-                    color = if (m.out) {
-                        MaterialTheme.colorScheme.onPrimaryContainer
-                    } else {
-                        MaterialTheme.colorScheme.onSurface
-                    }
-                )
+                m.photoPath?.let { Photo(it) }
+                if (m.text.isNotEmpty()) {
+                    Text(
+                        m.text,
+                        style = MaterialTheme.typography.bodyMedium,
+                        color = if (m.out) {
+                            MaterialTheme.colorScheme.onPrimaryContainer
+                        } else {
+                            MaterialTheme.colorScheme.onSurface
+                        }
+                    )
+                }
                 Text(
                     Td.time(m.date),
                     style = MaterialTheme.typography.labelSmall,
@@ -165,4 +176,31 @@ private fun Bubble(m: Msg) {
             }
         }
     }
+}
+
+@Composable
+private fun Photo(path: String) {
+    val bmp by produceState<ImageBitmap?>(null, path) {
+        value = withContext(Dispatchers.IO) { decodePhoto(path) }
+    }
+    val b = bmp
+    if (b != null) {
+        Image(
+            bitmap = b,
+            contentDescription = null,
+            contentScale = ContentScale.FillWidth,
+            modifier = Modifier.fillMaxWidth().clip(RoundedCornerShape(14.dp))
+        )
+    }
+}
+
+private fun decodePhoto(path: String): ImageBitmap? {
+    val bounds = BitmapFactory.Options().apply { inJustDecodeBounds = true }
+    BitmapFactory.decodeFile(path, bounds)
+    var sample = 1
+    while (maxOf(bounds.outWidth, bounds.outHeight) / (sample * 2) >= 1280) {
+        sample *= 2
+    }
+    val opts = BitmapFactory.Options().apply { inSampleSize = sample }
+    return BitmapFactory.decodeFile(path, opts)?.asImageBitmap()
 }
