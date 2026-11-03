@@ -4,6 +4,8 @@ import android.app.PendingIntent
 import android.content.Context
 import android.content.Intent
 import android.os.Build
+import android.os.Handler
+import android.os.Looper
 import androidx.compose.runtime.getValue
 import androidx.compose.runtime.mutableStateListOf
 import androidx.compose.runtime.mutableStateOf
@@ -13,6 +15,7 @@ import com.wayles.app.MainActivity
 import com.wayles.app.R
 import org.drinkless.tdlib.Client
 import org.drinkless.tdlib.TdApi
+import org.json.JSONObject
 import java.io.File
 import java.text.SimpleDateFormat
 import java.util.Date
@@ -24,7 +27,7 @@ import java.util.concurrent.atomic.AtomicLong
 import androidx.core.app.NotificationCompat
 import androidx.core.app.NotificationManagerCompat
 
-enum class Auth { Init, Phone, Code, Password, Done }
+enum class Auth { Init, Phone, Code, Password, Registration, OtherDevice, Done }
 
 enum class Conn { Unknown, Waiting, Connecting, Ready, Updating }
 
@@ -89,11 +92,53 @@ object Td {
     private val searchGen = AtomicLong(0)
     private val pending = ConcurrentHashMap<Long, (TdApi.Object) -> Unit>()
     private val fmt = SimpleDateFormat("HH:mm", Locale.getDefault())
+    private val tsFmt = SimpleDateFormat("HH:mm:ss", Locale.getDefault())
+    private val uiHandler = Handler(Looper.getMainLooper())
     var mediaDir: File? = null
     var appContext: Context? = null
     @Volatile
     var appOpen: Boolean = false
     private val cachePool = Executors.newSingleThreadExecutor()
+
+    @Volatile
+    private var customApiId: Int? = null
+    @Volatile
+    private var customApiHash: String? = null
+    @Volatile
+    private var wipeOnClosed = false
+    private var tdLogFile: File? = null
+
+    val usingPlaceholder: Boolean
+        get() = customApiId == null &&
+            BuildConfig.TD_API_ID == 6 &&
+            BuildConfig.TD_API_HASH == "eb06d4abfb49dc3eeb1aeb98ae0f581e"
+
+    var credsLabel by mutableStateOf("")
+        private set
+    var otherLink by mutableStateOf("")
+        private set
+    var phoneBusy by mutableStateOf(false)
+    val diag = mutableStateListOf<String>()
+    var tdLogTail by mutableStateOf<List<String>>(emptyList())
+        private set
+
+    private fun diagLog(s: String) {
+        val line = "${tsFmt.format(Date())}  $s"
+        diag.add(line)
+        while (diag.size > 60) {
+            diag.removeAt(0)
+        }
+    }
+
+    fun readTdLog() {
+        val f = tdLogFile ?: return
+        cachePool.execute {
+            try {
+                tdLogTail = if (f.exists()) f.readLines().takeLast(30) else emptyList()
+            } catch (_: Throwable) {
+            }
+        }
+    }
 
     var auth by mutableStateOf(Auth.Init)
     var error by mutableStateOf("")
@@ -101,7 +146,6 @@ object Td {
     var openTitle by mutableStateOf("")
     var replyTo by mutableStateOf<Msg?>(null)
     var connection by mutableStateOf(Conn.Unknown)
-    var phoneBusy by mutableStateOf(false)
     private var historyEnd by mutableStateOf(false)
     private val loadingHistory = AtomicBoolean(false)
     val chats = mutableStateListOf<Chat>()
@@ -301,20 +345,59 @@ object Td {
 
     private fun onAuthState(s: TdApi.AuthorizationState) {
         when (s) {
-            is TdApi.AuthorizationStateWaitTdlibParameters -> setTdlibParameters()
-            is TdApi.AuthorizationStateWaitPhoneNumber -> auth = Auth.Phone
-            is TdApi.AuthorizationStateWaitCode -> auth = Auth.Code
-            is TdApi.AuthorizationStateWaitPassword -> auth = Auth.Password
+            is TdApi.AuthorizationStateWaitTdlibParameters -> {
+                diagLog("auth: жду параметры TDLib")
+                setTdlibParameters()
+            }
+            is TdApi.AuthorizationStateWaitPhoneNumber -> {
+                diagLog("auth: жду номер телефона")
+                auth = Auth.Phone
+            }
+            is TdApi.AuthorizationStateWaitCode -> {
+                diagLog("auth: жду код из Telegram")
+                auth = Auth.Code
+            }
+            is TdApi.AuthorizationStateWaitPassword -> {
+                diagLog("auth: жду облачный пароль")
+                auth = Auth.Password
+            }
+            is TdApi.AuthorizationStateWaitRegistration -> {
+                diagLog("auth: номер не зарегистрирован")
+                auth = Auth.Registration
+            }
+            is TdApi.AuthorizationStateWaitOtherDeviceConfirmation -> {
+                diagLog("auth: подтверждение на другом устройстве")
+                otherLink = s.link
+                auth = Auth.OtherDevice
+            }
             is TdApi.AuthorizationStateReady -> {
+                diagLog("auth: вход выполнен")
                 auth = Auth.Done
                 loadChats()
             }
-            is TdApi.AuthorizationStateClosed -> spawn()
+            is TdApi.AuthorizationStateClosed -> {
+                diagLog("auth: клиент закрыт")
+                if (wipeOnClosed) {
+                    wipeOnClosed = false
+                    dbDir?.deleteRecursively()
+                    diagLog("база данных удалена для новых ключей")
+                }
+                spawn()
+            }
             else -> {}
         }
     }
 
     private fun onConn(s: TdApi.ConnectionState) {
+        val name = when (s) {
+            is TdApi.ConnectionStateReady -> "соединение готово"
+            is TdApi.ConnectionStateConnecting -> "подключение…"
+            is TdApi.ConnectionStateConnectingToProxy -> "подключение через прокси…"
+            is TdApi.ConnectionStateWaitingForNetwork -> "нет сети"
+            is TdApi.ConnectionStateUpdating -> "обновление данных…"
+            else -> "неизвестно"
+        }
+        diagLog("сеть: $name")
         connection = when (s) {
             is TdApi.ConnectionStateReady -> Conn.Ready
             is TdApi.ConnectionStateConnecting, is TdApi.ConnectionStateConnectingToProxy -> Conn.Connecting
@@ -336,6 +419,9 @@ object Td {
     private fun setTdlibParameters() {
         val db = dbDir ?: return
         val files = filesRoot ?: return
+        val id = customApiId ?: BuildConfig.TD_API_ID
+        val hash = customApiHash ?: BuildConfig.TD_API_HASH
+        diagLog("setTdlibParameters: api_id=$id")
         request(
             TdApi.SetTdlibParameters(
                 false,
@@ -346,8 +432,8 @@ object Td {
                 true,
                 true,
                 false,
-                BuildConfig.TD_API_ID,
-                BuildConfig.TD_API_HASH,
+                id,
+                hash,
                 Locale.getDefault().language.ifEmpty { "en" },
                 Build.MODEL ?: "Android",
                 "Android ${Build.VERSION.RELEASE}",
@@ -355,7 +441,10 @@ object Td {
             )
         ) { r ->
             if (r is TdApi.Error) {
+                diagLog("setTdlibParameters ошибка: ${r.code} ${r.message}")
                 error = r.message
+            } else {
+                diagLog("setTdlibParameters: Ok")
             }
         }
     }
@@ -405,6 +494,31 @@ object Td {
     fun start(db: File, files: File) {
         dbDir = db
         filesRoot = files
+        val ctx = appContext
+        if (ctx != null) {
+            try {
+                val kf = File(ctx.filesDir, "tdkeys.json")
+                if (kf.exists()) {
+                    val o = JSONObject(kf.readText())
+                    customApiId = o.optInt("id", 0).takeIf { it > 0 }
+                    customApiHash = o.optString("hash", "").takeIf { it.isNotEmpty() }
+                }
+            } catch (_: Throwable) {
+            }
+            val lf = File(ctx.filesDir, "tdlog.txt")
+            tdLogFile = lf
+            try {
+                Client.execute(TdApi.SetLogStream(TdApi.LogStreamFile(lf.absolutePath, 2_000_000L, false)))
+                Client.execute(TdApi.SetLogVerbosityLevel(2))
+            } catch (_: Throwable) {
+            }
+        }
+        credsLabel = when {
+            customApiId != null -> "Свои API-ключи (api_id=$customApiId)"
+            usingPlaceholder -> "Тестовые ключи Telegram (api_id=6) — заблокированы"
+            else -> "Ключи сборки (api_id=${BuildConfig.TD_API_ID})"
+        }
+        diagLog("Старт: $credsLabel")
         if (client == null) {
             spawn()
         }
@@ -444,10 +558,75 @@ object Td {
         }
     }
 
+    fun setApiKeys(idStr: String, hashStr: String): Boolean {
+        val id = idStr.trim().toIntOrNull()
+        val hash = hashStr.trim()
+        if (id == null || id <= 0) {
+            error = "API ID — положительное число"
+            return false
+        }
+        if (hash.length !in 32..40 || !hash.all { it.isDigit() || it in 'a'..'f' || it in 'A'..'F' }) {
+            error = "API HASH — строка из 32 символов 0-9a-f"
+            return false
+        }
+        val ctx = appContext
+        if (ctx == null) {
+            error = "Приложение ещё не готово"
+            return false
+        }
+        try {
+            File(ctx.filesDir, "tdkeys.json")
+                .writeText(JSONObject().put("id", id).put("hash", hash).toString())
+        } catch (t: Throwable) {
+            error = "Не удалось сохранить: ${t.message ?: t.javaClass.simpleName}"
+            return false
+        }
+        customApiId = id
+        customApiHash = hash
+        credsLabel = "Свои API-ключи (api_id=$id)"
+        error = ""
+        diagLog("Сохранены свои API-ключи (api_id=$id), перезапуск TDLib…")
+        auth = Auth.Init
+        initError = null
+        otherLink = ""
+        val c = client
+        if (c == null) {
+            wipeOnClosed = false
+            dbDir?.deleteRecursively()
+            spawn()
+        } else {
+            wipeOnClosed = true
+            request(TdApi.Close()) { }
+        }
+        return true
+    }
+
     private fun request(f: TdApi.Function<*>, cb: (TdApi.Object) -> Unit) {
         val c = client ?: return
         val key = nextId.getAndIncrement()
         pending[key] = cb
+        c.send(f) { r -> pending.remove(key)?.invoke(r) }
+    }
+
+    private fun requestAuth(f: TdApi.Function<*>, timeoutMs: Long, cb: (TdApi.Object) -> Unit) {
+        val c = client
+        if (c == null) {
+            cb(TdApi.Error(500, "NO_CLIENT"))
+            return
+        }
+        val key = nextId.getAndIncrement()
+        val settled = AtomicBoolean(false)
+        pending[key] = { r ->
+            if (settled.compareAndSet(false, true)) {
+                cb(r)
+            }
+        }
+        uiHandler.postDelayed({
+            if (settled.compareAndSet(false, true)) {
+                pending.remove(key)
+                cb(TdApi.Error(408, "TIMEOUT"))
+            }
+        }, timeoutMs)
         c.send(f) { r -> pending.remove(key)?.invoke(r) }
     }
 
@@ -456,9 +635,22 @@ object Td {
     fun phone(v: String) {
         error = ""
         phoneBusy = true
-        request(TdApi.SetAuthenticationPhoneNumber(normalizePhone(v), null)) { r ->
+        diagLog("Отправка номера $v…")
+        requestAuth(
+            TdApi.SetAuthenticationPhoneNumber(
+                normalizePhone(v),
+                TdApi.PhoneNumberAuthenticationSettings(false, false, false, false, false, null, null)
+            ),
+            30000L
+        ) { r ->
             phoneBusy = false
-            if (r is TdApi.Error) error = r.message
+            when (r) {
+                is TdApi.Error -> {
+                    error = r.message
+                    diagLog("Номер отклонён: ${r.code} ${r.message}")
+                }
+                else -> diagLog("Номер принят, жду код")
+            }
         }
     }
 
@@ -476,15 +668,25 @@ object Td {
 
     fun code(v: String) {
         error = ""
-        request(TdApi.CheckAuthenticationCode(v)) { r ->
-            if (r is TdApi.Error) error = r.message
+        requestAuth(TdApi.CheckAuthenticationCode(v), 30000L) { r ->
+            if (r is TdApi.Error) {
+                error = r.message
+                diagLog("Код отклонён: ${r.code} ${r.message}")
+            } else {
+                diagLog("Код принят")
+            }
         }
     }
 
     fun password(v: String) {
         error = ""
-        request(TdApi.CheckAuthenticationPassword(v)) { r ->
-            if (r is TdApi.Error) error = r.message
+        requestAuth(TdApi.CheckAuthenticationPassword(v), 30000L) { r ->
+            if (r is TdApi.Error) {
+                error = r.message
+                diagLog("Пароль отклонён: ${r.code} ${r.message}")
+            } else {
+                diagLog("Пароль принят")
+            }
         }
     }
 
