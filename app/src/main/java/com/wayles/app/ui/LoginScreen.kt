@@ -28,8 +28,10 @@ import androidx.compose.ui.text.input.PasswordVisualTransformation
 import androidx.compose.ui.text.input.VisualTransformation
 import androidx.compose.ui.text.style.TextAlign
 import androidx.compose.ui.unit.dp
+import androidx.compose.ui.unit.sp
 import com.wayles.app.R
 import com.wayles.app.td.Auth
+import com.wayles.app.td.Conn
 import com.wayles.app.td.Td
 
 @Composable
@@ -56,6 +58,15 @@ fun LoginScreen() {
             color = MaterialTheme.colorScheme.onSurfaceVariant,
             textAlign = TextAlign.Center
         )
+        if (Td.connection != Conn.Ready && step != Auth.Password) {
+            Spacer(Modifier.height(6.dp))
+            Text(
+                connText(Td.connection),
+                style = MaterialTheme.typography.bodySmall,
+                color = MaterialTheme.colorScheme.onSurfaceVariant,
+                textAlign = TextAlign.Center
+            )
+        }
         if (step == Auth.Init) {
             Spacer(Modifier.height(24.dp))
             val err = Td.initError
@@ -78,6 +89,11 @@ fun LoginScreen() {
         }
         Spacer(Modifier.height(32.dp))
         if (step != Auth.Init) {
+            val flagIcon: (@Composable () -> Unit)? = if (step == Auth.Phone) {
+                { Text(CountryFlags.flag(value), fontSize = 22.sp) }
+            } else {
+                null
+            }
             OutlinedTextField(
                 value = value,
                 onValueChange = {
@@ -87,6 +103,7 @@ fun LoginScreen() {
                 label = { Text(label(step)) },
                 singleLine = true,
                 shape = RoundedCornerShape(28.dp),
+                leadingIcon = flagIcon,
                 keyboardOptions = KeyboardOptions(
                     keyboardType = if (step == Auth.Phone) KeyboardType.Phone else KeyboardType.Text
                 ),
@@ -99,8 +116,8 @@ fun LoginScreen() {
             )
             Spacer(Modifier.height(16.dp))
             WaylesButton(
-                text = "Продолжить",
-                enabled = value.isNotBlank(),
+                text = if (step == Auth.Phone && Td.phoneBusy) "Отправка…" else "Продолжить",
+                enabled = value.isNotBlank() && !(step == Auth.Phone && Td.phoneBusy),
                 onClick = {
                     when (step) {
                         Auth.Phone -> Td.phone(value.trim())
@@ -115,9 +132,10 @@ fun LoginScreen() {
         if (Td.error.isNotEmpty()) {
             Spacer(Modifier.height(12.dp))
             Text(
-                Td.error,
+                prettyError(Td.error),
                 color = MaterialTheme.colorScheme.error,
-                style = MaterialTheme.typography.bodySmall
+                style = MaterialTheme.typography.bodySmall,
+                textAlign = TextAlign.Center
             )
         }
     }
@@ -136,4 +154,21 @@ private fun label(s: Auth): String = when (s) {
     Auth.Code -> "Код"
     Auth.Password -> "Пароль"
     else -> ""
+}
+
+private fun connText(c: Conn): String = when (c) {
+    Conn.Waiting -> "Нет связи с Telegram — проверьте интернет"
+    Conn.Connecting -> "Подключение к Telegram…"
+    Conn.Updating -> "Обновление данных…"
+    else -> ""
+}
+
+private fun prettyError(e: String): String = when (e) {
+    "PHONE_NUMBER_INVALID" -> "Неверный номер. Укажите код страны, например +79991234567"
+    "PHONE_NUMBER_FLOOD" -> "Слишком много попыток входа. Попробуйте позже"
+    "PHONE_CODE_INVALID" -> "Неверный код"
+    "PHONE_CODE_EXPIRED" -> "Код истёк. Войдите заново"
+    "PASSWORD_HASH_INVALID" -> "Неверный пароль"
+    "PHONE_NUMBER_UNOCCUPIED" -> "Номер не зарегистрирован в Telegram"
+    else -> e
 }

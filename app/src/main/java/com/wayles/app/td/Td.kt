@@ -19,6 +19,8 @@ import java.util.concurrent.atomic.AtomicLong
 
 enum class Auth { Init, Phone, Code, Password, Done }
 
+enum class Conn { Unknown, Waiting, Connecting, Ready, Updating }
+
 class Chat {
     var id: Long = 0
     var title: String = ""
@@ -76,6 +78,8 @@ object Td {
     var openChatId by mutableStateOf<Long?>(null)
     var openTitle by mutableStateOf("")
     var replyTo by mutableStateOf<Msg?>(null)
+    var connection by mutableStateOf(Conn.Unknown)
+    var phoneBusy by mutableStateOf(false)
     private var historyEnd by mutableStateOf(false)
     private val loadingHistory = AtomicBoolean(false)
     val chats = mutableStateListOf<Chat>()
@@ -84,6 +88,7 @@ object Td {
     private fun onUpdate(o: TdApi.Object) {
         when (o) {
             is TdApi.UpdateAuthorizationState -> onAuthState(o.authorizationState)
+            is TdApi.UpdateConnectionState -> onConn(o.state)
             is TdApi.UpdateNewMessage -> onNewMessage(o.message)
             is TdApi.UpdateChatLastMessage -> onLastMessage(o)
             is TdApi.UpdateChatReadInbox -> onReadInbox(o)
@@ -269,6 +274,16 @@ object Td {
         }
     }
 
+    private fun onConn(s: TdApi.ConnectionState) {
+        connection = when (s) {
+            is TdApi.ConnectionStateReady -> Conn.Ready
+            is TdApi.ConnectionStateConnecting, is TdApi.ConnectionStateConnectingToProxy -> Conn.Connecting
+            is TdApi.ConnectionStateWaitingForNetwork -> Conn.Waiting
+            is TdApi.ConnectionStateUpdating -> Conn.Updating
+            else -> Conn.Unknown
+        }
+    }
+
     private fun setTdlibParameters() {
         val db = dbDir ?: return
         val files = filesRoot ?: return
@@ -358,9 +373,23 @@ object Td {
 
     fun phone(v: String) {
         error = ""
-        request(TdApi.SetAuthenticationPhoneNumber(v, null)) { r ->
+        phoneBusy = true
+        request(TdApi.SetAuthenticationPhoneNumber(normalizePhone(v), null)) { r ->
+            phoneBusy = false
             if (r is TdApi.Error) error = r.message
         }
+    }
+
+    private fun normalizePhone(raw: String): String {
+        val d = raw.filter { it.isDigit() }
+        if (d.isEmpty()) {
+            return raw.trim()
+        }
+        if (raw.trim().startsWith("+")) {
+            return "+$d"
+        }
+        val fixed = if (d.length == 11 && d.startsWith("8")) "7" + d.substring(1) else d
+        return "+$fixed"
     }
 
     fun code(v: String) {
