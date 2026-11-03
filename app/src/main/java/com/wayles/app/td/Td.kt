@@ -32,6 +32,11 @@ class Msg {
     var date: Int = 0
     var photoPath by mutableStateOf<String?>(null)
     var fileId by mutableStateOf(0)
+    var duration by mutableStateOf(0)
+    var videoPath by mutableStateOf<String?>(null)
+    var thumbPath by mutableStateOf<String?>(null)
+    var videoFileId by mutableStateOf(0)
+    var thumbFileId by mutableStateOf(0)
 }
 
 object Td {
@@ -115,6 +120,14 @@ object Td {
             if (m.fileId == f.id) {
                 m.fileId = 0
                 cacheMedia(f.id, f.local.path, "jpg") { m.photoPath = it }
+            }
+            if (m.thumbFileId == f.id) {
+                m.thumbFileId = 0
+                cacheMedia(f.id, f.local.path, "jpg") { m.thumbPath = it }
+            }
+            if (m.videoFileId == f.id) {
+                m.videoFileId = 0
+                cacheMedia(f.id, f.local.path, "mp4") { m.videoPath = it }
             }
         }
     }
@@ -269,6 +282,27 @@ object Td {
                         msg.fileId = f.id
                         request(TdApi.DownloadFile(f.id, 32, 0, 0, false)) { }
                     }
+                }
+            }
+            is TdApi.MessageVideo -> {
+                val v = c.video
+                msg.duration = v.duration
+                val t = v.thumbnail
+                if (t != null) {
+                    val tf = t.file
+                    if (tf.local.isDownloadingCompleted && tf.local.path.isNotEmpty()) {
+                        cacheMedia(tf.id, tf.local.path, "jpg") { msg.thumbPath = it }
+                    } else {
+                        msg.thumbFileId = tf.id
+                        request(TdApi.DownloadFile(tf.id, 32, 0, 0, false)) { }
+                    }
+                }
+                val vf = v.video
+                if (vf.local.isDownloadingCompleted && vf.local.path.isNotEmpty()) {
+                    cacheMedia(vf.id, vf.local.path, "mp4") { msg.videoPath = it }
+                } else {
+                    msg.videoFileId = vf.id
+                    request(TdApi.DownloadFile(vf.id, 32, 0, 0, false)) { }
                 }
             }
             else -> msg.text = content(c)

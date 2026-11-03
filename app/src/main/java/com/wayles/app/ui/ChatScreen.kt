@@ -1,5 +1,6 @@
 package com.wayles.app.ui
 
+import android.content.Intent
 import android.graphics.BitmapFactory
 import androidx.activity.compose.BackHandler
 import androidx.activity.compose.rememberLauncherForActivityResult
@@ -9,6 +10,7 @@ import androidx.compose.animation.animateContentSize
 import androidx.compose.animation.core.spring
 import androidx.compose.foundation.Image
 import androidx.compose.foundation.background
+import androidx.compose.foundation.clickable
 import androidx.compose.foundation.interaction.MutableInteractionSource
 import androidx.compose.foundation.layout.Arrangement
 import androidx.compose.foundation.layout.Box
@@ -26,11 +28,14 @@ import androidx.compose.foundation.layout.widthIn
 import androidx.compose.foundation.lazy.LazyColumn
 import androidx.compose.foundation.lazy.items
 import androidx.compose.foundation.lazy.rememberLazyListState
+import androidx.compose.foundation.shape.CircleShape
 import androidx.compose.foundation.shape.RoundedCornerShape
 import androidx.compose.material.icons.Icons
 import androidx.compose.material.icons.automirrored.rounded.ArrowBack
 import androidx.compose.material.icons.automirrored.rounded.Send
 import androidx.compose.material.icons.rounded.Add
+import androidx.compose.material.icons.rounded.PlayArrow
+import androidx.compose.material3.CircularProgressIndicator
 import androidx.compose.material3.ExperimentalMaterial3Api
 import androidx.compose.material3.FilledIconButton
 import androidx.compose.material3.FilledTonalButton
@@ -55,12 +60,14 @@ import androidx.compose.runtime.snapshotFlow
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.draw.clip
+import androidx.compose.ui.graphics.Color
 import androidx.compose.ui.graphics.ImageBitmap
 import androidx.compose.ui.graphics.asImageBitmap
 import androidx.compose.ui.layout.ContentScale
 import androidx.compose.ui.platform.LocalContext
 import androidx.compose.ui.unit.dp
 import androidx.compose.ui.window.Dialog
+import androidx.core.content.FileProvider
 import com.wayles.app.td.Msg
 import com.wayles.app.td.Td
 import java.io.File
@@ -266,6 +273,9 @@ private fun Bubble(m: Msg, modifier: Modifier = Modifier) {
         ) {
             Column {
                 m.photoPath?.let { Photo(it) }
+                if (m.duration > 0) {
+                    VideoBlock(m)
+                }
                 if (m.text.isNotEmpty()) {
                     Text(
                         m.text,
@@ -302,6 +312,64 @@ private fun Photo(path: String) {
             modifier = Modifier.fillMaxWidth().clip(RoundedCornerShape(14.dp))
         )
     }
+}
+
+@Composable
+private fun VideoBlock(m: Msg) {
+    val ctx = LocalContext.current
+    val ready = m.videoPath
+    Box(
+        modifier = Modifier.fillMaxWidth()
+            .clickable(enabled = ready != null) {
+                val uri = FileProvider.getUriForFile(ctx, "${ctx.packageName}.files", File(ready!!))
+                val intent = Intent(Intent.ACTION_VIEW)
+                    .setDataAndType(uri, "video/mp4")
+                    .addFlags(Intent.FLAG_GRANT_READ_URI_PERMISSION)
+                ctx.startActivity(intent)
+            }
+    ) {
+        m.thumbPath?.let { Photo(it) }
+        if (m.thumbPath == null) {
+            Box(
+                modifier = Modifier.fillMaxWidth().height(220.dp)
+                    .clip(RoundedCornerShape(14.dp))
+                    .background(MaterialTheme.colorScheme.surfaceContainerHighest)
+            )
+        }
+        Box(
+            modifier = Modifier.align(Alignment.Center)
+                .size(44.dp)
+                .clip(CircleShape)
+                .background(Color.Black.copy(alpha = 0.45f)),
+            contentAlignment = Alignment.Center
+        ) {
+            if (ready != null) {
+                Icon(Icons.Rounded.PlayArrow, contentDescription = null, tint = Color.White)
+            } else {
+                CircularProgressIndicator(
+                    modifier = Modifier.size(20.dp),
+                    color = Color.White,
+                    strokeWidth = 2.dp
+                )
+            }
+        }
+        Text(
+            formatDuration(m.duration),
+            style = MaterialTheme.typography.labelSmall,
+            color = Color.White,
+            modifier = Modifier.align(Alignment.BottomEnd)
+                .padding(8.dp)
+                .clip(RoundedCornerShape(50))
+                .background(Color.Black.copy(alpha = 0.45f))
+                .padding(horizontal = 6.dp, vertical = 2.dp)
+        )
+    }
+}
+
+private fun formatDuration(s: Int): String {
+    val min = s / 60
+    val sec = s % 60
+    return "%d:%02d".format(min, sec)
 }
 
 @Composable
