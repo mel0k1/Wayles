@@ -16,6 +16,7 @@ import androidx.compose.foundation.layout.Row
 import androidx.compose.foundation.layout.Spacer
 import androidx.compose.foundation.layout.fillMaxSize
 import androidx.compose.foundation.layout.fillMaxWidth
+import androidx.compose.foundation.layout.height
 import androidx.compose.foundation.layout.padding
 import androidx.compose.foundation.layout.size
 import androidx.compose.foundation.layout.width
@@ -129,13 +130,27 @@ fun ChatScreen() {
         Column(
             modifier = Modifier.fillMaxSize().padding(pad)
         ) {
-            LazyColumn(
-                state = listState,
-                modifier = Modifier.weight(1f),
-                contentPadding = PaddingValues(horizontal = 12.dp, vertical = 8.dp)
-            ) {
-                items(Td.messages, key = { it.id }) { m ->
-                    Bubble(m)
+            if (Td.messages.isEmpty()) {
+                Box(Modifier.weight(1f).fillMaxWidth(), contentAlignment = Alignment.Center) {
+                    Column(horizontalAlignment = Alignment.CenterHorizontally) {
+                        Text("Сообщений ещё нет", style = MaterialTheme.typography.titleMedium)
+                        Spacer(Modifier.height(4.dp))
+                        Text(
+                            "Напишите первым",
+                            style = MaterialTheme.typography.bodyMedium,
+                            color = MaterialTheme.colorScheme.onSurfaceVariant
+                        )
+                    }
+                }
+            } else {
+                LazyColumn(
+                    state = listState,
+                    modifier = Modifier.weight(1f),
+                    contentPadding = PaddingValues(horizontal = 12.dp, vertical = 8.dp)
+                ) {
+                    items(Td.messages, key = { it.id }) { m ->
+                        Bubble(m)
+                    }
                 }
             }
             Row(

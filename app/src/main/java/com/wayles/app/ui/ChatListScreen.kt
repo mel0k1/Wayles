@@ -26,6 +26,7 @@ import androidx.compose.material3.TopAppBarDefaults
 import androidx.compose.runtime.Composable
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
+import androidx.compose.ui.draw.alpha
 import androidx.compose.ui.draw.clip
 import androidx.compose.ui.res.painterResource
 import androidx.compose.ui.text.style.TextOverflow
@@ -63,11 +64,21 @@ fun MainScreen() {
         ) {
             if (Td.chats.isEmpty()) {
                 Box(Modifier.weight(1f).fillMaxWidth(), contentAlignment = Alignment.Center) {
-                    Text(
-                        "Пока пусто",
-                        style = MaterialTheme.typography.bodyMedium,
-                        color = MaterialTheme.colorScheme.onSurfaceVariant
-                    )
+                    Column(horizontalAlignment = Alignment.CenterHorizontally) {
+                        Image(
+                            painter = painterResource(R.drawable.star),
+                            contentDescription = null,
+                            modifier = Modifier.height(64.dp).alpha(0.55f)
+                        )
+                        Spacer(Modifier.height(14.dp))
+                        Text("Пока пусто", style = MaterialTheme.typography.titleMedium)
+                        Spacer(Modifier.height(4.dp))
+                        Text(
+                            "Здесь появятся ваши чаты",
+                            style = MaterialTheme.typography.bodyMedium,
+                            color = MaterialTheme.colorScheme.onSurfaceVariant
+                        )
+                    }
                 }
             } else {
                 LazyColumn(Modifier.weight(1f)) {
