@@ -5,6 +5,8 @@ import androidx.activity.compose.BackHandler
 import androidx.activity.compose.rememberLauncherForActivityResult
 import androidx.activity.result.PickVisualMediaRequest
 import androidx.activity.result.contract.ActivityResultContracts
+import androidx.compose.animation.animateContentSize
+import androidx.compose.animation.core.spring
 import androidx.compose.foundation.Image
 import androidx.compose.foundation.background
 import androidx.compose.foundation.interaction.MutableInteractionSource
@@ -149,7 +151,13 @@ fun ChatScreen() {
                     contentPadding = PaddingValues(horizontal = 12.dp, vertical = 8.dp)
                 ) {
                     items(Td.messages, key = { it.id }) { m ->
-                        Bubble(m)
+                        Bubble(
+                            m,
+                            Modifier.animateItem(
+                                fadeInSpec = spring(stiffness = 400f),
+                                placementSpec = spring(dampingRatio = 0.8f, stiffness = 400f)
+                            )
+                        )
                     }
                 }
             }
@@ -196,13 +204,14 @@ fun ChatScreen() {
 }
 
 @Composable
-private fun Bubble(m: Msg) {
+private fun Bubble(m: Msg, modifier: Modifier = Modifier) {
     Row(
-        modifier = Modifier.fillMaxWidth().padding(vertical = 2.dp),
+        modifier = modifier.fillMaxWidth().padding(vertical = 2.dp),
         horizontalArrangement = if (m.out) Arrangement.End else Arrangement.Start
     ) {
         Box(
             modifier = Modifier.widthIn(max = 320.dp)
+                .animateContentSize(spring(dampingRatio = 0.8f, stiffness = 400f))
                 .clip(RoundedCornerShape(20.dp))
                 .background(
                     if (m.out) {
