@@ -1,5 +1,10 @@
 package com.wayles.app.ui
 
+import android.Manifest
+import android.content.pm.PackageManager
+import android.os.Build
+import androidx.activity.compose.rememberLauncherForActivityResult
+import androidx.activity.result.contract.ActivityResultContracts
 import androidx.compose.foundation.Image
 import androidx.compose.foundation.background
 import androidx.compose.foundation.clickable
@@ -52,12 +57,14 @@ import androidx.compose.ui.draw.alpha
 import androidx.compose.ui.draw.clip
 import androidx.compose.ui.graphics.Color
 import androidx.compose.ui.input.pointer.pointerInput
+import androidx.compose.ui.platform.LocalContext
 import androidx.compose.ui.res.painterResource
 import androidx.compose.ui.text.style.TextOverflow
 import androidx.compose.ui.unit.dp
 import com.wayles.app.R
 import com.wayles.app.td.Chat
 import com.wayles.app.td.Td
+import androidx.core.content.ContextCompat
 import kotlinx.coroutines.delay
 
 @OptIn(ExperimentalMaterial3Api::class)
@@ -66,6 +73,15 @@ fun MainScreen() {
     var showTheme by remember { mutableStateOf(false) }
     var query by remember { mutableStateOf("") }
     var menuChat by remember { mutableStateOf<Chat?>(null) }
+    val ctx = LocalContext.current
+    val notifPerm = rememberLauncherForActivityResult(ActivityResultContracts.RequestPermission()) { }
+    LaunchedEffect(Unit) {
+        if (Build.VERSION.SDK_INT >= 33 &&
+            ContextCompat.checkSelfPermission(ctx, Manifest.permission.POST_NOTIFICATIONS) != PackageManager.PERMISSION_GRANTED
+        ) {
+            notifPerm.launch(Manifest.permission.POST_NOTIFICATIONS)
+        }
+    }
     LaunchedEffect(query) {
         if (query.isNotEmpty()) {
             delay(400)

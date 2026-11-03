@@ -1,11 +1,16 @@
 package com.wayles.app.td
 
+import android.app.PendingIntent
+import android.content.Context
+import android.content.Intent
 import android.os.Build
 import androidx.compose.runtime.getValue
 import androidx.compose.runtime.mutableStateListOf
 import androidx.compose.runtime.mutableStateOf
 import androidx.compose.runtime.setValue
 import com.wayles.app.BuildConfig
+import com.wayles.app.MainActivity
+import com.wayles.app.R
 import org.drinkless.tdlib.Client
 import org.drinkless.tdlib.TdApi
 import java.io.File
@@ -16,6 +21,8 @@ import java.util.concurrent.ConcurrentHashMap
 import java.util.concurrent.Executors
 import java.util.concurrent.atomic.AtomicBoolean
 import java.util.concurrent.atomic.AtomicLong
+import androidx.core.app.NotificationCompat
+import androidx.core.app.NotificationManagerCompat
 
 enum class Auth { Init, Phone, Code, Password, Done }
 
@@ -73,6 +80,9 @@ object Td {
     private val pending = ConcurrentHashMap<Long, (TdApi.Object) -> Unit>()
     private val fmt = SimpleDateFormat("HH:mm", Locale.getDefault())
     var mediaDir: File? = null
+    var appContext: Context? = null
+    @Volatile
+    var appOpen: Boolean = false
     private val cachePool = Executors.newSingleThreadExecutor()
 
     var auth by mutableStateOf(Auth.Init)
@@ -332,8 +342,41 @@ object Td {
         if (m.chatId == openChatId && messages.none { it.id == m.id }) {
             messages.add(toMsg(m))
         }
+        if (!m.isOutgoing && (!appOpen || m.chatId != openChatId)) {
+            notifyMessage(m)
+        }
         request(TdApi.GetChat(m.chatId)) { r ->
             if (r is TdApi.Chat) upsert(r)
+        }
+    }
+
+    private fun notifyMessage(m: TdApi.Message) {
+        val ctx = appContext ?: return
+        val text = content(m.content)
+        if (text.isEmpty()) {
+            return
+        }
+        request(TdApi.GetChat(m.chatId)) { r ->
+            if (r !is TdApi.Chat) {
+                return@request
+            }
+            try {
+                val pi = PendingIntent.getActivity(
+                    ctx,
+                    0,
+                    Intent(ctx, MainActivity::class.java)
+                        .addFlags(Intent.FLAG_ACTIVITY_NEW_TASK or Intent.FLAG_ACTIVITY_CLEAR_TOP),
+                    PendingIntent.FLAG_UPDATE_CURRENT or PendingIntent.FLAG_IMMUTABLE
+                )
+                val b = NotificationCompat.Builder(ctx, "messages")
+                    .setSmallIcon(R.drawable.star)
+                    .setContentTitle(r.title)
+                    .setContentText(text)
+                    .setAutoCancel(true)
+                    .setContentIntent(pi)
+                NotificationManagerCompat.from(ctx).notify((r.id % 100000).toInt(), b.build())
+            } catch (_: Throwable) {
+            }
         }
     }
 
