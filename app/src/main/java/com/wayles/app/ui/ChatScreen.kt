@@ -24,11 +24,20 @@ import androidx.compose.foundation.lazy.LazyColumn
 import androidx.compose.foundation.lazy.items
 import androidx.compose.foundation.lazy.rememberLazyListState
 import androidx.compose.foundation.shape.RoundedCornerShape
+import androidx.compose.material.icons.Icons
+import androidx.compose.material.icons.automirrored.rounded.ArrowBack
+import androidx.compose.material.icons.automirrored.rounded.Send
+import androidx.compose.material.icons.rounded.Add
+import androidx.compose.material3.ExperimentalMaterial3Api
 import androidx.compose.material3.FilledIconButton
+import androidx.compose.material3.Icon
+import androidx.compose.material3.IconButton
 import androidx.compose.material3.MaterialTheme
 import androidx.compose.material3.OutlinedTextField
+import androidx.compose.material3.Scaffold
 import androidx.compose.material3.Text
-import androidx.compose.material3.TextButton
+import androidx.compose.material3.TopAppBar
+import androidx.compose.material3.TopAppBarDefaults
 import androidx.compose.runtime.Composable
 import androidx.compose.runtime.LaunchedEffect
 import androidx.compose.runtime.getValue
@@ -51,6 +60,7 @@ import java.io.File
 import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.withContext
 
+@OptIn(ExperimentalMaterial3Api::class)
 @Composable
 fun ChatScreen() {
     BackHandler { Td.closeChat() }
@@ -98,68 +108,73 @@ fun ChatScreen() {
         }
     }
 
-    Column(
-        modifier = Modifier.fillMaxSize().background(MaterialTheme.colorScheme.background)
-    ) {
-        Row(
-            modifier = Modifier.fillMaxWidth().padding(8.dp),
-            verticalAlignment = Alignment.CenterVertically
-        ) {
-            TextButton(onClick = { Td.closeChat() }) {
-                Text("←", style = MaterialTheme.typography.titleLarge)
-            }
-            Text(
-                Td.openTitle,
-                style = MaterialTheme.typography.titleMedium,
-                maxLines = 1,
-                modifier = Modifier.weight(1f)
-            )
-        }
-        LazyColumn(
-            state = listState,
-            modifier = Modifier.weight(1f),
-            contentPadding = PaddingValues(horizontal = 12.dp, vertical = 8.dp)
-        ) {
-            items(Td.messages, key = { it.id }) { m ->
-                Bubble(m)
-            }
-        }
-        Row(
-            modifier = Modifier.fillMaxWidth().padding(12.dp),
-            verticalAlignment = Alignment.Bottom
-        ) {
-            val attachSource = remember { MutableInteractionSource() }
-            val attachRadius = rememberPressRadius(attachSource, 28.dp, 14.dp)
-            FilledIconButton(
-                onClick = { picker.launch(PickVisualMediaRequest(ActivityResultContracts.PickVisualMedia.ImageOnly)) },
-                interactionSource = attachSource,
-                shape = RoundedCornerShape(attachRadius),
-                modifier = Modifier.size(56.dp)
-            ) {
-                Text("+", style = MaterialTheme.typography.titleLarge)
-            }
-            Spacer(Modifier.width(8.dp))
-            OutlinedTextField(
-                value = input,
-                onValueChange = { input = it },
-                placeholder = { Text("Сообщение") },
-                shape = RoundedCornerShape(24.dp),
-                maxLines = 4,
-                modifier = Modifier.weight(1f)
-            )
-            Spacer(Modifier.width(8.dp))
-            val source = remember { MutableInteractionSource() }
-            val radius = rememberPressRadius(source, 28.dp, 14.dp)
-            FilledIconButton(
-                onClick = {
-                    Td.sendText(input)
-                    input = ""
+    Scaffold(
+        containerColor = MaterialTheme.colorScheme.background,
+        topBar = {
+            TopAppBar(
+                title = {
+                    Text(Td.openTitle, maxLines = 1)
                 },
-                interactionSource = source,
-                shape = RoundedCornerShape(radius),
-                modifier = Modifier.size(56.dp)
+                navigationIcon = {
+                    IconButton(onClick = { Td.closeChat() }) {
+                        Icon(Icons.AutoMirrored.Rounded.ArrowBack, contentDescription = null)
+                    }
+                },
+                colors = TopAppBarDefaults.topAppBarColors(
+                    containerColor = MaterialTheme.colorScheme.background
+                )
+            )
+        }
+    ) { pad ->
+        Column(
+            modifier = Modifier.fillMaxSize().padding(pad)
+        ) {
+            LazyColumn(
+                state = listState,
+                modifier = Modifier.weight(1f),
+                contentPadding = PaddingValues(horizontal = 12.dp, vertical = 8.dp)
             ) {
-                Text("→", style = MaterialTheme.typography.titleLarge)
+                items(Td.messages, key = { it.id }) { m ->
+                    Bubble(m)
+                }
+            }
+            Row(
+                modifier = Modifier.fillMaxWidth().padding(12.dp),
+                verticalAlignment = Alignment.Bottom
+            ) {
+                val attachSource = remember { MutableInteractionSource() }
+                val attachRadius = rememberPressRadius(attachSource, 28.dp, 14.dp)
+                FilledIconButton(
+                    onClick = { picker.launch(PickVisualMediaRequest(ActivityResultContracts.PickVisualMedia.ImageOnly)) },
+                    interactionSource = attachSource,
+                    shape = RoundedCornerShape(attachRadius),
+                    modifier = Modifier.size(56.dp)
+                ) {
+                    Icon(Icons.Rounded.Add, contentDescription = null)
+                }
+                Spacer(Modifier.width(8.dp))
+                OutlinedTextField(
+                    value = input,
+                    onValueChange = { input = it },
+                    placeholder = { Text("Сообщение") },
+                    shape = RoundedCornerShape(24.dp),
+                    maxLines = 4,
+                    modifier = Modifier.weight(1f)
+                )
+                Spacer(Modifier.width(8.dp))
+                val source = remember { MutableInteractionSource() }
+                val radius = rememberPressRadius(source, 28.dp, 14.dp)
+                FilledIconButton(
+                    onClick = {
+                        Td.sendText(input)
+                        input = ""
+                    },
+                    interactionSource = source,
+                    shape = RoundedCornerShape(radius),
+                    modifier = Modifier.size(56.dp)
+                ) {
+                    Icon(Icons.AutoMirrored.Rounded.Send, contentDescription = null)
+                }
             }
         }
     }

@@ -17,8 +17,12 @@ import androidx.compose.foundation.lazy.LazyColumn
 import androidx.compose.foundation.lazy.items
 import androidx.compose.foundation.shape.CircleShape
 import androidx.compose.foundation.shape.RoundedCornerShape
+import androidx.compose.material3.CenterAlignedTopAppBar
+import androidx.compose.material3.ExperimentalMaterial3Api
 import androidx.compose.material3.MaterialTheme
+import androidx.compose.material3.Scaffold
 import androidx.compose.material3.Text
+import androidx.compose.material3.TopAppBarDefaults
 import androidx.compose.runtime.Composable
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
@@ -30,35 +34,46 @@ import com.wayles.app.R
 import com.wayles.app.td.Chat
 import com.wayles.app.td.Td
 
+@OptIn(ExperimentalMaterial3Api::class)
 @Composable
 fun MainScreen() {
-    Column(
-        modifier = Modifier.fillMaxSize().background(MaterialTheme.colorScheme.background)
-    ) {
-        Row(
-            modifier = Modifier.fillMaxWidth().padding(horizontal = 20.dp, vertical = 18.dp),
-            verticalAlignment = Alignment.CenterVertically
-        ) {
-            Image(
-                painter = painterResource(R.drawable.star),
-                contentDescription = null,
-                modifier = Modifier.height(28.dp)
-            )
-            Spacer(Modifier.width(12.dp))
-            Text("Wayles", style = MaterialTheme.typography.titleLarge)
-        }
-        if (Td.chats.isEmpty()) {
-            Box(Modifier.weight(1f).fillMaxWidth(), contentAlignment = Alignment.Center) {
-                Text(
-                    "Пока пусто",
-                    style = MaterialTheme.typography.bodyMedium,
-                    color = MaterialTheme.colorScheme.onSurfaceVariant
+    Scaffold(
+        containerColor = MaterialTheme.colorScheme.background,
+        topBar = {
+            CenterAlignedTopAppBar(
+                title = {
+                    Row(verticalAlignment = Alignment.CenterVertically) {
+                        Image(
+                            painter = painterResource(R.drawable.star),
+                            contentDescription = null,
+                            modifier = Modifier.height(24.dp)
+                        )
+                        Spacer(Modifier.width(10.dp))
+                        Text("Wayles", style = MaterialTheme.typography.titleLarge)
+                    }
+                },
+                colors = TopAppBarDefaults.centerAlignedTopAppBarColors(
+                    containerColor = MaterialTheme.colorScheme.background
                 )
-            }
-        } else {
-            LazyColumn(Modifier.weight(1f)) {
-                items(Td.chats, key = { it.id }) { chat ->
-                    ChatRow(chat)
+            )
+        }
+    ) { pad ->
+        Column(
+            modifier = Modifier.fillMaxSize().padding(pad)
+        ) {
+            if (Td.chats.isEmpty()) {
+                Box(Modifier.weight(1f).fillMaxWidth(), contentAlignment = Alignment.Center) {
+                    Text(
+                        "Пока пусто",
+                        style = MaterialTheme.typography.bodyMedium,
+                        color = MaterialTheme.colorScheme.onSurfaceVariant
+                    )
+                }
+            } else {
+                LazyColumn(Modifier.weight(1f)) {
+                    items(Td.chats, key = { it.id }) { chat ->
+                        ChatRow(chat)
+                    }
                 }
             }
         }
