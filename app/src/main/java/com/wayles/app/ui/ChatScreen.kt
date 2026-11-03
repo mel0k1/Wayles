@@ -2,6 +2,9 @@ package com.wayles.app.ui
 
 import android.graphics.BitmapFactory
 import androidx.activity.compose.BackHandler
+import androidx.activity.compose.rememberLauncherForActivityResult
+import androidx.activity.result.PickVisualMediaRequest
+import androidx.activity.result.contract.ActivityResultContracts
 import androidx.compose.foundation.Image
 import androidx.compose.foundation.background
 import androidx.compose.foundation.interaction.MutableInteractionSource
@@ -40,9 +43,11 @@ import androidx.compose.ui.draw.clip
 import androidx.compose.ui.graphics.ImageBitmap
 import androidx.compose.ui.graphics.asImageBitmap
 import androidx.compose.ui.layout.ContentScale
+import androidx.compose.ui.platform.LocalContext
 import androidx.compose.ui.unit.dp
 import com.wayles.app.td.Msg
 import com.wayles.app.td.Td
+import java.io.File
 import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.withContext
 
@@ -80,6 +85,19 @@ fun ChatScreen() {
         }
     }
 
+    val ctx = LocalContext.current
+    val picker = rememberLauncherForActivityResult(ActivityResultContracts.PickVisualMedia()) { uri ->
+        if (uri != null) {
+            val dir = File(ctx.cacheDir, "out")
+            dir.mkdirs()
+            val dst = File(dir, "up_${System.currentTimeMillis()}.jpg")
+            ctx.contentResolver.openInputStream(uri)?.use { src ->
+                dst.outputStream().use { out -> src.copyTo(out) }
+            }
+            Td.sendPhoto(dst.absolutePath)
+        }
+    }
+
     Column(
         modifier = Modifier.fillMaxSize().background(MaterialTheme.colorScheme.background)
     ) {
@@ -110,6 +128,17 @@ fun ChatScreen() {
             modifier = Modifier.fillMaxWidth().padding(12.dp),
             verticalAlignment = Alignment.Bottom
         ) {
+            val attachSource = remember { MutableInteractionSource() }
+            val attachRadius = rememberPressRadius(attachSource, 28.dp, 14.dp)
+            FilledIconButton(
+                onClick = { picker.launch(PickVisualMediaRequest(ActivityResultContracts.PickVisualMedia.ImageOnly)) },
+                interactionSource = attachSource,
+                shape = RoundedCornerShape(attachRadius),
+                modifier = Modifier.size(56.dp)
+            ) {
+                Text("+", style = MaterialTheme.typography.titleLarge)
+            }
+            Spacer(Modifier.width(8.dp))
             OutlinedTextField(
                 value = input,
                 onValueChange = { input = it },

@@ -115,6 +115,33 @@ object Td {
         }
     }
 
+    fun sendPhoto(path: String) {
+        val id = openChatId ?: return
+        request(
+            TdApi.SendMessage(
+                id,
+                null,
+                null,
+                null,
+                null,
+                TdApi.InputMessagePhoto(
+                    TdApi.InputFileLocal(path),
+                    null,
+                    null,
+                    intArrayOf(),
+                    0,
+                    0,
+                    TdApi.FormattedText("", arrayOf()),
+                    false,
+                    null,
+                    false
+                )
+            )
+        ) { r ->
+            if (r is TdApi.Error) error = r.message
+        }
+    }
+
     private fun onAuthState(s: TdApi.AuthorizationState) {
         when (s) {
             is TdApi.AuthorizationStateWaitPhoneNumber -> auth = Auth.Phone
