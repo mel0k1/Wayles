@@ -27,6 +27,7 @@ class Chat {
     var unread: Int = 0
     var lastText: String = ""
     var lastDate: Int = 0
+    var pinned: Boolean = false
 }
 
 class Msg {
@@ -68,6 +69,7 @@ object Td {
     private var dbDir: File? = null
     private var filesRoot: File? = null
     private val nextId = AtomicLong(1)
+    private val searchGen = AtomicLong(0)
     private val pending = ConcurrentHashMap<Long, (TdApi.Object) -> Unit>()
     private val fmt = SimpleDateFormat("HH:mm", Locale.getDefault())
     var mediaDir: File? = null
@@ -84,11 +86,17 @@ object Td {
     private val loadingHistory = AtomicBoolean(false)
     val chats = mutableStateListOf<Chat>()
     val messages = mutableStateListOf<Msg>()
+    val searchResults = mutableStateListOf<Chat>()
+
+    private fun sortChats() {
+        chats.sortWith(compareByDescending<Chat> { it.pinned }.thenByDescending { it.lastDate })
+    }
 
     private fun onUpdate(o: TdApi.Object) {
         when (o) {
             is TdApi.UpdateAuthorizationState -> onAuthState(o.authorizationState)
             is TdApi.UpdateConnectionState -> onConn(o.state)
+            is TdApi.UpdateChatPosition -> onPosition(o)
             is TdApi.UpdateNewMessage -> onNewMessage(o.message)
             is TdApi.UpdateChatLastMessage -> onLastMessage(o)
             is TdApi.UpdateChatReadInbox -> onReadInbox(o)
@@ -112,7 +120,7 @@ object Td {
         val m = u.lastMessage ?: return
         row.lastDate = m.date
         row.lastText = content(m.content)
-        chats.sortByDescending { it.lastDate }
+        sortChats()
     }
 
     private fun onReadInbox(u: TdApi.UpdateChatReadInbox) {
@@ -284,6 +292,15 @@ object Td {
         }
     }
 
+    private fun onPosition(u: TdApi.UpdateChatPosition) {
+        if (u.position.list !is TdApi.ChatListMain) {
+            return
+        }
+        val row = chatById(u.chatId) ?: return
+        row.pinned = u.position.isPinned
+        sortChats()
+    }
+
     private fun setTdlibParameters() {
         val db = dbDir ?: return
         val files = filesRoot ?: return
@@ -425,7 +442,52 @@ object Td {
         item.unread = c.unreadCount
         item.lastDate = c.lastMessage?.date ?: 0
         item.lastText = content(c.lastMessage?.content)
-        chats.sortByDescending { it.lastDate }
+        item.pinned = c.positions.any { it.isPinned && it.list is TdApi.ChatListMain }
+        sortChats()
+    }
+
+    fun togglePin(c: Chat) {
+        val target = !c.pinned
+        c.pinned = target
+        sortChats()
+        request(TdApi.ToggleChatIsPinned(null, c.id, target)) { r ->
+            if (r is TdApi.Error) error = r.message
+        }
+    }
+
+    fun search(q: String) {
+        val gen = searchGen.incrementAndGet()
+        searchResults.clear()
+        val query = q.trim()
+        if (query.isEmpty()) {
+            return
+        }
+        request(TdApi.SearchChatsOnServer(query, 20)) { r ->
+            if (gen != searchGen.get()) {
+                return@request
+            }
+            if (r is TdApi.Chats) {
+                r.chatIds.forEach { id ->
+                    request(TdApi.GetChat(id)) { c ->
+                        if (gen != searchGen.get()) {
+                            return@request
+                        }
+                        if (c is TdApi.Chat) upsertSearch(c)
+                    }
+                }
+            }
+        }
+    }
+
+    private fun upsertSearch(c: TdApi.Chat) {
+        if (searchResults.any { it.id == c.id }) {
+            return
+        }
+        val item = Chat()
+        item.id = c.id
+        item.title = c.title
+        item.lastDate = c.lastMessage?.date ?: 0
+        searchResults.add(item)
     }
 
     private fun content(c: TdApi.MessageContent?): String = when (c) {
