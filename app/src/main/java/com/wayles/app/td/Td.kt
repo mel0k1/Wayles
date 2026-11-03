@@ -54,8 +54,47 @@ object Td {
         when (o) {
             is TdApi.UpdateAuthorizationState -> onAuthState(o.authorizationState)
             is TdApi.UpdateNewMessage -> onNewMessage(o.message)
+            is TdApi.UpdateChatLastMessage -> onLastMessage(o)
+            is TdApi.UpdateChatReadInbox -> onReadInbox(o)
+            is TdApi.UpdateChatTitle -> onTitle(o)
+            is TdApi.UpdateDeleteMessages -> onDeleted(o)
             else -> {}
         }
+    }
+
+    private fun chatById(id: Long): Chat? = chats.firstOrNull { it.id == id }
+
+    private fun onLastMessage(u: TdApi.UpdateChatLastMessage) {
+        val row = chatById(u.chatId)
+        if (row == null) {
+            request(TdApi.GetChat(u.chatId)) { c ->
+                if (c is TdApi.Chat) upsert(c)
+            }
+            return
+        }
+        val m = u.lastMessage ?: return
+        row.lastDate = m.date
+        row.lastText = content(m.content)
+        chats.sortByDescending { it.lastDate }
+    }
+
+    private fun onReadInbox(u: TdApi.UpdateChatReadInbox) {
+        chatById(u.chatId)?.unread = u.unreadCount
+    }
+
+    private fun onTitle(u: TdApi.UpdateChatTitle) {
+        chatById(u.chatId)?.title = u.title
+        if (u.chatId == openChatId) {
+            openTitle = u.title
+        }
+    }
+
+    private fun onDeleted(u: TdApi.UpdateDeleteMessages) {
+        if (u.chatId != openChatId) {
+            return
+        }
+        val gone = u.messageIds.toSet()
+        messages.removeAll { it.id in gone }
     }
 
     private fun onAuthState(s: TdApi.AuthorizationState) {
@@ -160,7 +199,9 @@ object Td {
         request(TdApi.OpenChat(c.id)) { }
         request(TdApi.GetChatHistory(c.id, 0, 0, 50, false)) { r ->
             if (r is TdApi.Messages) {
-                r.messages.filterNotNull().reversed().forEach { m ->
+                val loaded = r.messages.filterNotNull()
+                request(TdApi.ViewMessages(c.id, loaded.map { it.id }.toLongArray(), null, false)) { }
+                loaded.reversed().forEach { m ->
                     if (messages.none { it.id == m.id }) {
                         messages.add(toMsg(m))
                     }
