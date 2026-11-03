@@ -2,13 +2,20 @@ package com.wayles.app.ui
 
 import android.content.Intent
 import android.graphics.BitmapFactory
+import android.media.MediaPlayer
 import androidx.activity.compose.BackHandler
 import androidx.activity.compose.rememberLauncherForActivityResult
 import androidx.activity.result.PickVisualMediaRequest
 import androidx.activity.result.contract.ActivityResultContracts
 import androidx.compose.animation.animateContentSize
 import androidx.compose.animation.core.animate
+import androidx.compose.animation.core.animateFloat
+import androidx.compose.animation.core.infiniteRepeatable
+import androidx.compose.animation.core.RepeatMode
+import androidx.compose.animation.core.rememberInfiniteTransition
 import androidx.compose.animation.core.spring
+import androidx.compose.animation.core.tween
+import androidx.compose.foundation.Canvas
 import androidx.compose.foundation.Image
 import androidx.compose.foundation.background
 import androidx.compose.foundation.clickable
@@ -37,6 +44,8 @@ import androidx.compose.material.icons.automirrored.rounded.ArrowBack
 import androidx.compose.material.icons.automirrored.rounded.Send
 import androidx.compose.material.icons.rounded.Add
 import androidx.compose.material.icons.rounded.Close
+import androidx.compose.material.icons.rounded.Mic
+import androidx.compose.material.icons.rounded.Pause
 import androidx.compose.material.icons.rounded.PlayArrow
 import androidx.compose.material3.CircularProgressIndicator
 import androidx.compose.material3.ExperimentalMaterial3Api
@@ -53,6 +62,7 @@ import androidx.compose.material3.TextButton
 import androidx.compose.material3.TopAppBar
 import androidx.compose.material3.TopAppBarDefaults
 import androidx.compose.runtime.Composable
+import androidx.compose.runtime.DisposableEffect
 import androidx.compose.runtime.LaunchedEffect
 import androidx.compose.runtime.getValue
 import androidx.compose.runtime.mutableStateOf
@@ -64,6 +74,9 @@ import androidx.compose.runtime.snapshotFlow
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.draw.clip
+import androidx.compose.ui.geometry.CornerRadius
+import androidx.compose.ui.geometry.Offset
+import androidx.compose.ui.geometry.Size
 import androidx.compose.ui.graphics.Color
 import androidx.compose.ui.graphics.ImageBitmap
 import androidx.compose.ui.graphics.asImageBitmap
@@ -78,6 +91,7 @@ import com.wayles.app.td.Msg
 import com.wayles.app.td.Td
 import java.io.File
 import kotlinx.coroutines.Dispatchers
+import kotlinx.coroutines.delay
 import kotlinx.coroutines.launch
 import kotlinx.coroutines.withContext
 
@@ -119,6 +133,22 @@ fun ChatScreen() {
     }
 
     val ctx = LocalContext.current
+    val scope = rememberCoroutineScope()
+    val recorder = remember { VoiceRecorder(ctx) }
+    var recording by remember { mutableStateOf(false) }
+    var recSecs by remember { mutableStateOf(0) }
+    val micPerm = rememberLauncherForActivityResult(ActivityResultContracts.RequestPermission()) { ok ->
+        if (ok && recorder.start(scope)) {
+            recSecs = 0
+            recording = true
+        }
+    }
+    LaunchedEffect(recording) {
+        while (recording) {
+            delay(1000)
+            recSecs++
+        }
+    }
     val picker = rememberLauncherForActivityResult(ActivityResultContracts.PickVisualMedia()) { uri ->
         if (uri != null) {
             val dir = File(ctx.cacheDir, "out")
@@ -216,39 +246,89 @@ fun ChatScreen() {
                 modifier = Modifier.fillMaxWidth().padding(12.dp),
                 verticalAlignment = Alignment.Bottom
             ) {
-                val attachSource = remember { MutableInteractionSource() }
-                val attachRadius = rememberPressRadius(attachSource, 28.dp, 14.dp)
-                FilledIconButton(
-                    onClick = { picker.launch(PickVisualMediaRequest(ActivityResultContracts.PickVisualMedia.ImageAndVideo)) },
-                    interactionSource = attachSource,
-                    shape = RoundedCornerShape(attachRadius),
-                    modifier = Modifier.size(56.dp)
-                ) {
-                    Icon(Icons.Rounded.Add, contentDescription = null)
-                }
-                Spacer(Modifier.width(8.dp))
-                OutlinedTextField(
-                    value = input,
-                    onValueChange = { input = it },
-                    placeholder = { Text("Сообщение") },
-                    shape = RoundedCornerShape(24.dp),
-                    maxLines = 4,
-                    modifier = Modifier.weight(1f)
-                )
-                Spacer(Modifier.width(8.dp))
-                val source = remember { MutableInteractionSource() }
-                val radius = rememberPressRadius(source, 28.dp, 14.dp)
-                FilledIconButton(
-                    onClick = {
-                        Td.sendText(input, Td.replyTo?.id ?: 0L)
-                        input = ""
-                        Td.replyTo = null
-                    },
-                    interactionSource = source,
-                    shape = RoundedCornerShape(radius),
-                    modifier = Modifier.size(56.dp)
-                ) {
-                    Icon(Icons.AutoMirrored.Rounded.Send, contentDescription = null)
+                if (recording) {
+                    PulsingDot()
+                    Spacer(Modifier.width(10.dp))
+                    Text(
+                        formatDuration(recSecs),
+                        style = MaterialTheme.typography.titleMedium,
+                        modifier = Modifier.weight(1f)
+                    )
+                    TextButton(onClick = {
+                        recorder.cancel()
+                        recording = false
+                    }) {
+                        Text("Отмена")
+                    }
+                    Spacer(Modifier.width(4.dp))
+                    val recSource = remember { MutableInteractionSource() }
+                    val recRadius = rememberPressRadius(recSource, 28.dp, 14.dp)
+                    FilledIconButton(
+                        onClick = {
+                            val take = recorder.stop()
+                            recording = false
+                            if (take != null) {
+                                Td.sendVoice(
+                                    take.file.absolutePath,
+                                    take.seconds,
+                                    waveformOf(take.amps),
+                                    Td.replyTo?.id ?: 0L
+                                )
+                                Td.replyTo = null
+                            }
+                        },
+                        interactionSource = recSource,
+                        shape = RoundedCornerShape(recRadius),
+                        modifier = Modifier.size(56.dp)
+                    ) {
+                        Icon(Icons.AutoMirrored.Rounded.Send, contentDescription = null)
+                    }
+                } else {
+                    val attachSource = remember { MutableInteractionSource() }
+                    val attachRadius = rememberPressRadius(attachSource, 28.dp, 14.dp)
+                    FilledIconButton(
+                        onClick = { picker.launch(PickVisualMediaRequest(ActivityResultContracts.PickVisualMedia.ImageAndVideo)) },
+                        interactionSource = attachSource,
+                        shape = RoundedCornerShape(attachRadius),
+                        modifier = Modifier.size(56.dp)
+                    ) {
+                        Icon(Icons.Rounded.Add, contentDescription = null)
+                    }
+                    Spacer(Modifier.width(8.dp))
+                    OutlinedTextField(
+                        value = input,
+                        onValueChange = { input = it },
+                        placeholder = { Text("Сообщение") },
+                        shape = RoundedCornerShape(24.dp),
+                        maxLines = 4,
+                        modifier = Modifier.weight(1f)
+                    )
+                    Spacer(Modifier.width(8.dp))
+                    val source = remember { MutableInteractionSource() }
+                    val radius = rememberPressRadius(source, 28.dp, 14.dp)
+                    FilledIconButton(
+                        onClick = {
+                            if (input.isBlank()) {
+                                micPerm.launch(android.Manifest.permission.RECORD_AUDIO)
+                            } else {
+                                Td.sendText(input, Td.replyTo?.id ?: 0L)
+                                input = ""
+                                Td.replyTo = null
+                            }
+                        },
+                        interactionSource = source,
+                        shape = RoundedCornerShape(radius),
+                        modifier = Modifier.size(56.dp)
+                    ) {
+                        Icon(
+                            if (input.isBlank()) {
+                                Icons.Rounded.Mic
+                            } else {
+                                Icons.AutoMirrored.Rounded.Send
+                            },
+                            contentDescription = null
+                        )
+                    }
                 }
             }
         }
@@ -338,8 +418,12 @@ private fun Bubble(m: Msg, modifier: Modifier = Modifier) {
         ) {
             Column {
                 m.photoPath?.let { Photo(it) }
-                if (m.duration > 0) {
+                if (m.duration > 0 && (m.videoPath != null || m.videoFileId != 0)) {
                     VideoBlock(m)
+                }
+                if (m.voiceDuration > 0) {
+                    Spacer(Modifier.height(4.dp))
+                    VoiceBlock(m)
                 }
                 if (m.text.isNotEmpty()) {
                     Text(
@@ -437,9 +521,152 @@ private fun formatDuration(s: Int): String {
     return "%d:%02d".format(min, sec)
 }
 
+@Composable
+private fun VoiceBlock(m: Msg) {
+    var player by remember(m.voicePath) { mutableStateOf<MediaPlayer?>(null) }
+    var playing by remember { mutableStateOf(false) }
+    var progress by remember { mutableStateOf(0f) }
+    val ready = m.voicePath
+    DisposableEffect(Unit) {
+        onDispose {
+            player?.release()
+        }
+    }
+    LaunchedEffect(playing, player) {
+        while (playing) {
+            val p = player
+            if (p != null && p.duration > 0) {
+                progress = p.currentPosition.toFloat() / p.duration.toFloat()
+            }
+            delay(50)
+        }
+    }
+    Row(
+        verticalAlignment = Alignment.CenterVertically,
+        modifier = Modifier.width(230.dp)
+    ) {
+        FilledIconButton(
+            onClick = {
+                if (ready == null) {
+                    return@FilledIconButton
+                }
+                val p = player
+                if (p == null) {
+                    val np = MediaPlayer()
+                    val ok = runCatching {
+                        np.setDataSource(ready)
+                        np.setOnPreparedListener { mp ->
+                            mp.start()
+                            playing = true
+                        }
+                        np.setOnCompletionListener {
+                            playing = false
+                            progress = 0f
+                        }
+                        np.prepareAsync()
+                    }.isSuccess
+                    if (!ok) {
+                        np.release()
+                    } else {
+                        player = np
+                    }
+                } else if (playing) {
+                    p.pause()
+                    playing = false
+                } else {
+                    p.start()
+                    playing = true
+                }
+            },
+            shape = CircleShape,
+            modifier = Modifier.size(40.dp)
+        ) {
+            if (ready == null) {
+                CircularProgressIndicator(
+                    modifier = Modifier.size(18.dp),
+                    strokeWidth = 2.dp
+                )
+            } else {
+                Icon(
+                    if (playing) Icons.Rounded.Pause else Icons.Rounded.PlayArrow,
+                    contentDescription = null
+                )
+            }
+        }
+        Spacer(Modifier.width(10.dp))
+        Waveform(
+            amps = m.voiceAmps,
+            progress = progress,
+            active = if (m.out) {
+                MaterialTheme.colorScheme.onPrimaryContainer
+            } else {
+                MaterialTheme.colorScheme.primary
+            },
+            idle = if (m.out) {
+                MaterialTheme.colorScheme.onPrimaryContainer.copy(alpha = 0.3f)
+            } else {
+                MaterialTheme.colorScheme.onSurfaceVariant.copy(alpha = 0.4f)
+            },
+            modifier = Modifier.weight(1f)
+        )
+        Spacer(Modifier.width(8.dp))
+        Text(
+            formatDuration(m.voiceDuration),
+            style = MaterialTheme.typography.labelSmall,
+            color = MaterialTheme.colorScheme.onSurfaceVariant
+        )
+    }
+}
+
+@Composable
+private fun Waveform(
+    amps: IntArray,
+    progress: Float,
+    active: Color,
+    idle: Color,
+    modifier: Modifier = Modifier
+) {
+    val bars = remember(amps) {
+        if (amps.isEmpty()) IntArray(28) { 10 } else amps
+    }
+    Canvas(modifier.height(26.dp)) {
+        val n = bars.size
+        val gap = 2.dp.toPx()
+        val w = ((size.width - gap * (n - 1)) / n).coerceAtLeast(1f)
+        val max = (bars.maxOrNull() ?: 1).coerceAtLeast(1)
+        val mid = size.height / 2f
+        bars.forEachIndexed { i, v ->
+            val h = (v.toFloat() / max * size.height).coerceAtLeast(2.dp.toPx())
+            drawRoundRect(
+                color = if (i < progress * n) active else idle,
+                topLeft = Offset(i * (w + gap), mid - h / 2f),
+                size = Size(w, h),
+                cornerRadius = CornerRadius(w / 2f)
+            )
+        }
+    }
+}
+
+@Composable
+private fun PulsingDot() {
+    val t = rememberInfiniteTransition(label = "rec")
+    val a by t.animateFloat(
+        initialValue = 0.3f,
+        targetValue = 1f,
+        animationSpec = infiniteRepeatable(tween(600), RepeatMode.Reverse),
+        label = "alpha"
+    )
+    Box(
+        modifier = Modifier.size(12.dp)
+            .clip(CircleShape)
+            .background(MaterialTheme.colorScheme.error.copy(alpha = a))
+    )
+}
+
 private fun replyPreview(m: Msg): String = when {
     m.text.isNotEmpty() -> m.text
     m.photoPath != null || m.fileId != 0 -> "Фото"
+    m.voiceDuration > 0 -> "Голосовое"
     m.duration > 0 -> "Видео"
     else -> "Сообщение"
 }

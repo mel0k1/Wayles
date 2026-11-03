@@ -39,6 +39,10 @@ class Msg {
     var thumbPath by mutableStateOf<String?>(null)
     var videoFileId by mutableStateOf(0)
     var thumbFileId by mutableStateOf(0)
+    var voicePath by mutableStateOf<String?>(null)
+    var voiceFileId by mutableStateOf(0)
+    var voiceDuration by mutableStateOf(0)
+    var voiceAmps by mutableStateOf(IntArray(0))
 }
 
 object Td {
@@ -135,6 +139,10 @@ object Td {
                 m.videoFileId = 0
                 cacheMedia(f.id, f.local.path, "mp4") { m.videoPath = it }
             }
+            if (m.voiceFileId == f.id) {
+                m.voiceFileId = 0
+                cacheMedia(f.id, f.local.path, "oga") { m.voicePath = it }
+            }
         }
     }
 
@@ -210,6 +218,28 @@ object Td {
                     false,
                     null,
                     false
+                )
+            )
+        ) { r ->
+            if (r is TdApi.Error) error = r.message
+        }
+    }
+
+    fun sendVoice(path: String, seconds: Int, waveform: ByteArray, replyId: Long) {
+        val id = openChatId ?: return
+        request(
+            TdApi.SendMessage(
+                id,
+                null,
+                if (replyId != 0L) TdApi.InputMessageReplyToMessage(replyId, null, 0, null) else null,
+                null,
+                null,
+                TdApi.InputMessageVoiceNote(
+                    TdApi.InputFileLocal(path),
+                    seconds,
+                    waveform,
+                    TdApi.FormattedText("", arrayOf()),
+                    null
                 )
             )
         ) { r ->
@@ -380,6 +410,18 @@ object Td {
                     cacheMedia(vf.id, vf.local.path, "mp4") { msg.videoPath = it }
                 } else {
                     msg.videoFileId = vf.id
+                    request(TdApi.DownloadFile(vf.id, 32, 0, 0, false)) { }
+                }
+            }
+            is TdApi.MessageVoiceNote -> {
+                val v = c.voiceNote
+                msg.voiceDuration = v.duration
+                msg.voiceAmps = IntArray(v.waveform.size) { v.waveform[it].toInt() and 0x1F }
+                val vf = v.voice
+                if (vf.local.isDownloadingCompleted && vf.local.path.isNotEmpty()) {
+                    cacheMedia(vf.id, vf.local.path, "oga") { msg.voicePath = it }
+                } else {
+                    msg.voiceFileId = vf.id
                     request(TdApi.DownloadFile(vf.id, 32, 0, 0, false)) { }
                 }
             }
