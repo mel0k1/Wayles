@@ -10,6 +10,7 @@ import java.text.SimpleDateFormat
 import java.util.Date
 import java.util.Locale
 import java.util.concurrent.ConcurrentHashMap
+import java.util.concurrent.atomic.AtomicBoolean
 import java.util.concurrent.atomic.AtomicLong
 
 enum class Auth { Phone, Code, Password, Done }
@@ -47,6 +48,8 @@ object Td {
     var error by mutableStateOf("")
     var openChatId by mutableStateOf<Long?>(null)
     var openTitle by mutableStateOf("")
+    private var historyEnd by mutableStateOf(false)
+    private val loadingHistory = AtomicBoolean(false)
     val chats = mutableStateListOf<Chat>()
     val messages = mutableStateListOf<Msg>()
 
@@ -54,47 +57,8 @@ object Td {
         when (o) {
             is TdApi.UpdateAuthorizationState -> onAuthState(o.authorizationState)
             is TdApi.UpdateNewMessage -> onNewMessage(o.message)
-            is TdApi.UpdateChatLastMessage -> onLastMessage(o)
-            is TdApi.UpdateChatReadInbox -> onReadInbox(o)
-            is TdApi.UpdateChatTitle -> onTitle(o)
-            is TdApi.UpdateDeleteMessages -> onDeleted(o)
             else -> {}
         }
-    }
-
-    private fun chatById(id: Long): Chat? = chats.firstOrNull { it.id == id }
-
-    private fun onLastMessage(u: TdApi.UpdateChatLastMessage) {
-        val row = chatById(u.chatId)
-        if (row == null) {
-            request(TdApi.GetChat(u.chatId)) { c ->
-                if (c is TdApi.Chat) upsert(c)
-            }
-            return
-        }
-        val m = u.lastMessage ?: return
-        row.lastDate = m.date
-        row.lastText = content(m.content)
-        chats.sortByDescending { it.lastDate }
-    }
-
-    private fun onReadInbox(u: TdApi.UpdateChatReadInbox) {
-        chatById(u.chatId)?.unread = u.unreadCount
-    }
-
-    private fun onTitle(u: TdApi.UpdateChatTitle) {
-        chatById(u.chatId)?.title = u.title
-        if (u.chatId == openChatId) {
-            openTitle = u.title
-        }
-    }
-
-    private fun onDeleted(u: TdApi.UpdateDeleteMessages) {
-        if (u.chatId != openChatId) {
-            return
-        }
-        val gone = u.messageIds.toSet()
-        messages.removeAll { it.id in gone }
     }
 
     private fun onAuthState(s: TdApi.AuthorizationState) {
@@ -196,17 +160,39 @@ object Td {
         openChatId = c.id
         openTitle = c.title
         messages.clear()
+        historyEnd = false
+        loadingHistory.set(false)
         request(TdApi.OpenChat(c.id)) { }
         request(TdApi.GetChatHistory(c.id, 0, 0, 50, false)) { r ->
             if (r is TdApi.Messages) {
-                val loaded = r.messages.filterNotNull()
-                request(TdApi.ViewMessages(c.id, loaded.map { it.id }.toLongArray(), null, false)) { }
-                loaded.reversed().forEach { m ->
+                r.messages.filterNotNull().reversed().forEach { m ->
                     if (messages.none { it.id == m.id }) {
                         messages.add(toMsg(m))
                     }
                 }
             }
+        }
+    }
+
+    fun loadMoreHistory() {
+        val id = openChatId ?: return
+        val oldest = messages.firstOrNull()?.id ?: return
+        if (historyEnd || !loadingHistory.compareAndSet(false, true)) {
+            return
+        }
+        request(TdApi.GetChatHistory(id, oldest, 0, 50, false)) { r ->
+            if (r is TdApi.Messages) {
+                val older = r.messages.filterNotNull()
+                if (older.isEmpty()) {
+                    historyEnd = true
+                }
+                older.reversed().forEach { m ->
+                    if (messages.none { it.id == m.id }) {
+                        messages.add(0, toMsg(m))
+                    }
+                }
+            }
+            loadingHistory.set(false)
         }
     }
 

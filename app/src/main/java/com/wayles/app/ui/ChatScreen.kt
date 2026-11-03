@@ -30,6 +30,7 @@ import androidx.compose.runtime.getValue
 import androidx.compose.runtime.mutableStateOf
 import androidx.compose.runtime.remember
 import androidx.compose.runtime.setValue
+import androidx.compose.runtime.snapshotFlow
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.draw.clip
@@ -42,10 +43,32 @@ fun ChatScreen() {
     BackHandler { Td.closeChat() }
     var input by remember { mutableStateOf("") }
     val listState = rememberLazyListState()
+    val lastId = Td.messages.lastOrNull()?.id
+    val firstId = Td.messages.firstOrNull()?.id
+    var prevFirstId by remember { mutableStateOf<Long?>(null) }
 
-    LaunchedEffect(Td.messages.size) {
+    LaunchedEffect(lastId) {
         if (Td.messages.isNotEmpty()) {
             listState.animateScrollToItem(Td.messages.size - 1)
+        }
+    }
+
+    LaunchedEffect(firstId) {
+        val prev = prevFirstId
+        if (prev != null && firstId != null && firstId != prev) {
+            val keep = Td.messages.indexOfFirst { it.id == prev }
+            if (keep > 0) {
+                listState.scrollToItem(keep)
+            }
+        }
+        prevFirstId = firstId
+    }
+
+    LaunchedEffect(listState) {
+        snapshotFlow { listState.firstVisibleItemIndex }.collect { idx ->
+            if (idx < 10) {
+                Td.loadMoreHistory()
+            }
         }
     }
 
