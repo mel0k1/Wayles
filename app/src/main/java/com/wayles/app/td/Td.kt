@@ -181,6 +181,36 @@ object Td {
         }
     }
 
+    fun sendVideo(path: String) {
+        val id = openChatId ?: return
+        request(
+            TdApi.SendMessage(
+                id,
+                null,
+                null,
+                null,
+                null,
+                TdApi.InputMessageVideo(
+                    TdApi.InputFileLocal(path),
+                    null,
+                    null,
+                    0,
+                    intArrayOf(),
+                    0,
+                    0,
+                    0,
+                    true,
+                    TdApi.FormattedText("", arrayOf()),
+                    false,
+                    null,
+                    false
+                )
+            )
+        ) { r ->
+            if (r is TdApi.Error) error = r.message
+        }
+    }
+
     private fun onAuthState(s: TdApi.AuthorizationState) {
         when (s) {
             is TdApi.AuthorizationStateWaitPhoneNumber -> auth = Auth.Phone

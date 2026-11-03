@@ -115,11 +115,16 @@ fun ChatScreen() {
         if (uri != null) {
             val dir = File(ctx.cacheDir, "out")
             dir.mkdirs()
-            val dst = File(dir, "up_${System.currentTimeMillis()}.jpg")
+            val video = ctx.contentResolver.getType(uri)?.startsWith("video") == true
+            val dst = File(dir, "up_${System.currentTimeMillis()}.${if (video) "mp4" else "jpg"}")
             ctx.contentResolver.openInputStream(uri)?.use { src ->
                 dst.outputStream().use { out -> src.copyTo(out) }
             }
-            pendingPhoto = dst.absolutePath
+            if (video) {
+                Td.sendVideo(dst.absolutePath)
+            } else {
+                pendingPhoto = dst.absolutePath
+            }
         }
     }
 
@@ -180,7 +185,7 @@ fun ChatScreen() {
                 val attachSource = remember { MutableInteractionSource() }
                 val attachRadius = rememberPressRadius(attachSource, 28.dp, 14.dp)
                 FilledIconButton(
-                    onClick = { picker.launch(PickVisualMediaRequest(ActivityResultContracts.PickVisualMedia.ImageOnly)) },
+                    onClick = { picker.launch(PickVisualMediaRequest(ActivityResultContracts.PickVisualMedia.ImageAndVideo)) },
                     interactionSource = attachSource,
                     shape = RoundedCornerShape(attachRadius),
                     modifier = Modifier.size(56.dp)
