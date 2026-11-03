@@ -14,8 +14,8 @@ android {
         applicationId = "com.wayles.app"
         minSdk = 24
         targetSdk = 36
-        versionCode = 5
-        versionName = "0.4"
+        versionCode = 6
+        versionName = "0.4.1"
 
         val lp = Properties().apply {
             val f = rootProject.file("local.properties")
@@ -23,13 +23,12 @@ android {
                 f.inputStream().use { load(it) }
             }
         }
-        buildConfigField(
-            "int",
-            "TD_API_ID",
-            System.getenv("TD_API_ID") ?: lp.getProperty("wayles.apiId") ?: "6"
-        )
-        val hash = System.getenv("TD_API_HASH") ?: lp.getProperty("wayles.apiHash")
-            ?: "eb06d4abfb49dc3eeb1aeb98ae0f581e"
+        val envApiId = System.getenv("TD_API_ID")?.trim()?.takeIf { it.isNotBlank() }
+        val lpApiId = lp.getProperty("wayles.apiId")?.trim()?.takeIf { it.isNotBlank() }
+        buildConfigField("int", "TD_API_ID", envApiId ?: lpApiId ?: "6")
+        val envHash = System.getenv("TD_API_HASH")?.trim()?.takeIf { it.isNotBlank() }
+        val lpHash = lp.getProperty("wayles.apiHash")?.trim()?.takeIf { it.isNotBlank() }
+        val hash = envHash ?: lpHash ?: "eb06d4abfb49dc3eeb1aeb98ae0f581e"
         buildConfigField("String", "TD_API_HASH", "\"$hash\"")
     }
 
