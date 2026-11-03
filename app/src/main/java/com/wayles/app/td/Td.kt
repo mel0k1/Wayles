@@ -186,7 +186,7 @@ object Td {
                 if (older.isEmpty()) {
                     historyEnd = true
                 }
-                older.reversed().forEach { m ->
+                older.forEach { m ->
                     if (messages.none { it.id == m.id }) {
                         messages.add(0, toMsg(m))
                     }
